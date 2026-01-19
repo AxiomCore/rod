@@ -1,0 +1,96 @@
+// src/types/map.rs
+use crate::core::validator::RodValidator;
+use crate::error::{RodError, RodResult};
+use serde_json::Value;
+
+#[derive(Debug, Clone)]
+pub struct RodMap {
+    key_type: Box<dyn RodValidator>,
+    value_type: Box<dyn RodValidator>,
+}
+
+impl RodMap {
+    pub fn new(key: Box<dyn RodValidator>, value: Box<dyn RodValidator>) -> Self {
+        Self {
+            key_type: key,
+            value_type: value,
+        }
+    }
+}
+
+impl RodValidator for RodMap {
+    fn validate(&self, input: &Value) -> RodResult<Value> {
+        // Expecting Array of [Key, Value] tuples
+        if let Value::Array(entries) = input {
+            let mut valid_entries = Vec::new();
+            let mut issues = Vec::new();
+
+            for (i, entry) in entries.iter().enumerate() {
+                if let Value::Array(pair) = entry {
+                    if pair.len() != 2 {
+                        issues.push(crate::error::RodIssue {
+                            details: crate::error::RodIssueCode::Custom {
+                                message: "Map entry must be a [key, value] tuple".to_string(),
+                                params: None,
+                            },
+                            message: "Map entry must be a [key, value] tuple".to_string(),
+                            path: vec![i.to_string()],
+                        });
+                        continue;
+                    }
+
+                    // Validate Key
+                    let k_res = self.key_type.validate(&pair[0]);
+                    // Validate Value
+                    let v_res = self.value_type.validate(&pair[1]);
+
+                    match (k_res, v_res) {
+                        (Ok(k), Ok(v)) => valid_entries.push(Value::Array(vec![k, v])),
+                        (Err(mut e), _) => {
+                            e.prepend_path(&format!("{}.key", i));
+                            issues.extend(e.issues);
+                        }
+                        (_, Err(mut e)) => {
+                            e.prepend_path(&format!("{}.value", i));
+                            issues.extend(e.issues);
+                        }
+                    }
+                } else {
+                    issues.push(crate::error::RodIssue {
+                        details: crate::error::RodIssueCode::InvalidType {
+                            expected: "array".to_string(),
+                            received: "unknown".to_string(),
+                        },
+                        message: "Map entries must be arrays".to_string(),
+                        path: vec![i.to_string()],
+                    });
+                }
+            }
+
+            if !issues.is_empty() {
+                return Err(RodError { issues });
+            }
+            return Ok(Value::Array(valid_entries));
+        }
+
+        Err(RodError::new(
+            "invalid_type",
+            "Expected array of entries for Map",
+        ))
+    }
+
+    fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
+        use crate::types::optional::OptionalExtension;
+        let partial_key = self.key_type.deep_partial_boxed();
+        let partial_value = self.value_type.deep_partial_boxed();
+        Box::new(RodMap::new(partial_key, partial_value).optional())
+    }
+
+    fn clone_box(&self) -> Box<dyn RodValidator> {
+        Box::new(self.clone())
+    }
+}
+
+pub fn map(key: impl RodValidator + 'static, value: impl RodValidator + 'static) -> RodMap {
+    RodMap::new(Box::new(key), Box::new(value))
+}

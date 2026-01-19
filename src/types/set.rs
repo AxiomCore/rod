@@ -1,0 +1,117 @@
+// src/types/set.rs
+use crate::core::validator::RodValidator;
+use crate::error::{RodError, RodResult};
+use serde_json::Value;
+use std::collections::HashSet;
+
+#[derive(Debug, Clone)]
+pub struct RodSet {
+    value_type: Box<dyn RodValidator>,
+    min: Option<usize>,
+    max: Option<usize>,
+}
+
+impl RodSet {
+    pub fn new(value_type: Box<dyn RodValidator>) -> Self {
+        Self {
+            value_type,
+            min: None,
+            max: None,
+        }
+    }
+
+    pub fn min(mut self, v: usize) -> Self {
+        self.min = Some(v);
+        self
+    }
+    pub fn max(mut self, v: usize) -> Self {
+        self.max = Some(v);
+        self
+    }
+}
+
+impl RodValidator for RodSet {
+    fn validate(&self, input: &Value) -> RodResult<Value> {
+        if let Value::Array(arr) = input {
+            let mut issues = Vec::new();
+            let mut valid_items = Vec::new();
+
+            // Check Uniqueness (using string representation for simple equality check)
+            let mut seen = HashSet::new();
+
+            for (i, item) in arr.iter().enumerate() {
+                let s = item.to_string(); // Simple dedup strategy for JSON values
+                if !seen.insert(s) {
+                    issues.push(crate::error::RodIssue {
+                        details: crate::error::RodIssueCode::Custom {
+                            message: "Items must be unique".to_string(),
+                            params: None,
+                        },
+                        message: "Items must be unique".to_string(),
+                        path: vec![i.to_string()],
+                    });
+                }
+
+                match self.value_type.validate(item) {
+                    Ok(v) => valid_items.push(v),
+                    Err(mut e) => {
+                        e.prepend_path(&i.to_string());
+                        issues.extend(e.issues);
+                    }
+                }
+            }
+
+            // Size checks
+            let len = arr.len();
+            if let Some(min) = self.min {
+                if len < min {
+                    issues.push(crate::error::RodIssue {
+                        details: crate::error::RodIssueCode::TooSmall {
+                            minimum: min as f64,
+                            inclusive: true,
+                            type_: "set".to_string(),
+                        },
+                        message: format!("Set must contain at least {} items", min),
+                        path: vec![],
+                    });
+                }
+            }
+            if let Some(max) = self.max {
+                if arr.len() > max {
+                    issues.push(crate::error::RodIssue {
+                        details: crate::error::RodIssueCode::TooBig {
+                            maximum: max as f64,
+                            inclusive: true,
+                            type_: "set".to_string(),
+                        },
+                        message: format!("Set must contain at most {} element(s)", max),
+                        path: vec![],
+                    });
+                }
+            }
+
+            if !issues.is_empty() {
+                return Err(RodError { issues });
+            }
+
+            // Return as Array (JSON doesn't have Set type)
+            return Ok(Value::Array(valid_items));
+        }
+
+        Err(RodError::new("invalid_type", "Expected array (set)"))
+    }
+
+    fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
+        use crate::types::optional::OptionalExtension;
+        let partial_value = self.value_type.deep_partial_boxed();
+        Box::new(RodSet::new(partial_value).optional())
+    }
+
+    fn clone_box(&self) -> Box<dyn RodValidator> {
+        Box::new(self.clone())
+    }
+}
+
+pub fn set(schema: impl RodValidator + 'static) -> RodSet {
+    RodSet::new(Box::new(schema))
+}
