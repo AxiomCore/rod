@@ -1,4 +1,4 @@
-// src/types/enum_type.rs
+use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::error::{RodError, RodResult};
 use serde_json::Value;
@@ -15,10 +15,12 @@ impl RodEnum {
 }
 
 impl RodValidator for RodEnum {
-    fn validate(&self, input: &Value) -> RodResult<Value> {
-        if let Value::String(s) = input {
-            if self.values.contains(s) {
-                return Ok(input.clone());
+    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+        if input.get_type() == DataType::String {
+            if let Some(s) = input.as_str() {
+                if self.values.iter().any(|v| v == s) {
+                    return Ok(Value::String(s.to_string()));
+                }
             }
         }
 

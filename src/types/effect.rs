@@ -1,3 +1,4 @@
+use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
 use crate::error::{RodError, RodResult};
 use serde_json::Value;
@@ -39,8 +40,10 @@ impl<F> RodValidator for RodRefine<F>
 where
     F: Fn(&Value) -> Result<(), String> + Send + Sync + Clone + 'static,
 {
-    fn validate(&self, input: &Value) -> RodResult<Value> {
+    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+        // 1. Validate Inner (creates owned Value)
         let val = self.schema.validate(input)?;
+        // 2. Check on Value
         if let Err(msg) = (self.check)(&val) {
             return Err(RodError::new("custom_error", &msg));
         }
@@ -48,9 +51,7 @@ where
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
-        // Refinements are lost on deep partial?
         // Zod says "Zod effects are NOT preserving refinements on deepPartial".
-        // returning self.schema.deep_partial_boxed()
         self.schema.deep_partial_boxed()
     }
 
@@ -98,7 +99,7 @@ impl<F> RodValidator for RodTransform<F>
 where
     F: Fn(Value) -> Value + Send + Sync + Clone + 'static,
 {
-    fn validate(&self, input: &Value) -> RodResult<Value> {
+    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
         let val = self.schema.validate(input)?;
         Ok((self.transformer)(val))
     }

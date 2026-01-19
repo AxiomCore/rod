@@ -1,4 +1,4 @@
-// src/types/number.rs
+use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::error::{RodError, RodIssue, RodResult};
 use serde_json::Value;
@@ -14,17 +14,14 @@ impl RodNumber {
     pub fn new() -> Self {
         Self::default()
     }
-
     pub fn min(mut self, val: f64) -> Self {
         self.min = Some(val);
         self
     }
-
     pub fn max(mut self, val: f64) -> Self {
         self.max = Some(val);
         self
     }
-
     pub fn int(mut self) -> Self {
         self.is_int = true;
         self
@@ -32,22 +29,27 @@ impl RodNumber {
 }
 
 impl RodValidator for RodNumber {
-    fn validate(&self, input: &Value) -> RodResult<Value> {
-        if let Value::Number(n) = input {
-            let val = n
+    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+        if input.get_type() == DataType::Number {
+            // Get value
+            let val = input
                 .as_f64()
-                .ok_or_else(|| RodError::new("invalid_number", "Invalid number"))?;
+                .ok_or_else(|| RodError::new("internal", "Failed to read number"))?;
+
             let mut issues = Vec::new();
 
-            if self.is_int && !n.is_i64() && (val.fract() != 0.0) {
-                issues.push(RodIssue {
-                    details: crate::error::RodIssueCode::InvalidType {
-                        expected: "integer".to_string(),
-                        received: "float".to_string(),
-                    },
-                    message: "Expected integer, received float".to_string(),
-                    path: vec![],
-                });
+            if self.is_int {
+                // Check if float has fractional part
+                if val.fract() != 0.0 {
+                    issues.push(RodIssue {
+                        details: crate::error::RodIssueCode::InvalidType {
+                            expected: "integer".to_string(),
+                            received: "float".to_string(),
+                        },
+                        message: "Expected integer, received float".to_string(),
+                        path: vec![],
+                    });
+                }
             }
 
             if let Some(min) = self.min {
@@ -55,7 +57,7 @@ impl RodValidator for RodNumber {
                     issues.push(RodIssue {
                         details: crate::error::RodIssueCode::TooSmall {
                             minimum: min,
-                            inclusive: true, // Assuming inclusive
+                            inclusive: true,
                             type_: "number".to_string(),
                         },
                         message: format!("Number must be greater than or equal to {}", min),
@@ -69,7 +71,7 @@ impl RodValidator for RodNumber {
                     issues.push(RodIssue {
                         details: crate::error::RodIssueCode::TooBig {
                             maximum: max,
-                            inclusive: true, // Assuming inclusive
+                            inclusive: true,
                             type_: "number".to_string(),
                         },
                         message: format!("Number must be less than or equal to {}", max),
@@ -82,7 +84,9 @@ impl RodValidator for RodNumber {
                 return Err(RodError { issues });
             }
 
-            return Ok(input.clone());
+            // Return owned value
+            // Return owned value
+            return Ok(input.to_json());
         }
 
         Err(RodError::new("invalid_type", "Expected number"))

@@ -1,4 +1,4 @@
-// src/types/array.rs
+use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::error::{RodError, RodResult};
 use serde_json::Value;
@@ -18,17 +18,14 @@ impl RodArray {
             max: None,
         }
     }
-
     pub fn min(mut self, val: usize) -> Self {
         self.min = Some(val);
         self
     }
-
     pub fn max(mut self, val: usize) -> Self {
         self.max = Some(val);
         self
     }
-
     pub fn nonempty(mut self) -> Self {
         self.min = Some(1);
         self
@@ -36,13 +33,14 @@ impl RodArray {
 }
 
 impl RodValidator for RodArray {
-    fn validate(&self, input: &Value) -> RodResult<Value> {
-        if let Value::Array(arr) = input {
+    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+        if input.get_type() == DataType::Array {
             let mut issues = Vec::new();
+            let len = input.count().unwrap_or(0);
 
             // 1. Validate Length
             if let Some(min) = self.min {
-                if arr.len() < min {
+                if len < min {
                     issues.push(crate::error::RodIssue {
                         details: crate::error::RodIssueCode::TooSmall {
                             minimum: min as f64,
@@ -55,7 +53,7 @@ impl RodValidator for RodArray {
                 }
             }
             if let Some(max) = self.max {
-                if arr.len() > max {
+                if len > max {
                     issues.push(crate::error::RodIssue {
                         details: crate::error::RodIssueCode::TooBig {
                             maximum: max as f64,
@@ -69,14 +67,15 @@ impl RodValidator for RodArray {
             }
 
             // 2. Validate Items
-            let mut valid_items = Vec::new();
-            for (index, item) in arr.iter().enumerate() {
-                match self.schema.validate(item) {
-                    Ok(val) => valid_items.push(val),
-                    Err(mut e) => {
-                        // Bubbling up error: Add index to path (e.g. "users.0.name")
-                        e.prepend_path(&index.to_string());
-                        issues.extend(e.issues);
+            let mut valid_items = Vec::with_capacity(len);
+            for i in 0..len {
+                if let Some(item_input) = input.get_index(i) {
+                    match self.schema.validate(item_input.as_ref()) {
+                        Ok(val) => valid_items.push(val),
+                        Err(mut e) => {
+                            e.prepend_path(&i.to_string());
+                            issues.extend(e.issues);
+                        }
                     }
                 }
             }
@@ -92,9 +91,9 @@ impl RodValidator for RodArray {
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
-        // Just return optional version of self
         use crate::types::optional::OptionalExtension;
-        Box::new(self.clone().optional())
+        let partial_item = self.schema.deep_partial_boxed();
+        Box::new(RodArray::new(partial_item).optional())
     }
 
     fn clone_box(&self) -> Box<dyn RodValidator> {

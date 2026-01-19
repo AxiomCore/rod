@@ -1,3 +1,4 @@
+use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::error::{RodError, RodResult};
 use serde_json::Value;
@@ -19,26 +20,31 @@ impl RodDiscriminatedUnion {
 }
 
 impl RodValidator for RodDiscriminatedUnion {
-    fn validate(&self, input: &Value) -> RodResult<Value> {
+    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
         // 1. Check if input is an object
-        let obj = match input {
-            Value::Object(o) => o,
-            _ => return Err(RodError::new("invalid_type", "Expected object")),
-        };
+        if input.get_type() != DataType::Object {
+            return Err(RodError::new("invalid_type", "Expected object"));
+        }
 
         // 2. Extract discriminator value
-        let disc_value = match obj.get(&self.discriminator) {
-            Some(Value::String(s)) => s,
-            Some(_) => {
-                return Err(RodError::new(
-                    "invalid_discriminator",
-                    "Discriminator value must be a string",
-                ));
-            }
+        // We use the trait method get_key
+        let disc_input = match input.get_key(&self.discriminator) {
+            Some(v) => v,
             None => {
                 return Err(RodError::new(
                     "invalid_discriminator",
                     "Discriminator key missing",
+                ));
+            }
+        };
+
+        // Ensure it is a string
+        let disc_value = match disc_input.as_str() {
+            Some(s) => s,
+            None => {
+                return Err(RodError::new(
+                    "invalid_discriminator",
+                    "Discriminator value must be a string",
                 ));
             }
         };
@@ -66,20 +72,6 @@ impl RodValidator for RodDiscriminatedUnion {
     }
 }
 
-/// Creates a discriminated union validator.
-///
-/// Unlike Zod (which introspects schemas), Rust requires explicit mapping of
-/// literal values to schemas.
-///
-/// # Example
-/// ```rust
-/// use rod::{discriminated_union, rod_obj, literal, string};
-///
-/// let schema = discriminated_union("type", vec![
-///     ("user", Box::new(rod_obj! { type: literal("user"), name: string() })),
-///     ("admin", Box::new(rod_obj! { type: literal("admin"), role: string() })),
-/// ]);
-/// ```
 pub fn discriminated_union(
     discriminator: &str,
     options: Vec<(&str, Box<dyn RodValidator>)>,
@@ -91,7 +83,6 @@ pub fn discriminated_union(
     RodDiscriminatedUnion::new(discriminator.to_string(), map)
 }
 
-// Low-level constructor if you already have a HashMap
 pub fn discriminated_union_map(
     discriminator: String,
     options: HashMap<String, Box<dyn RodValidator>>,
