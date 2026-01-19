@@ -1,5 +1,6 @@
 use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::{RodError, RodResult};
 use serde_json::Value;
 
@@ -15,7 +16,7 @@ impl RodLiteral {
 }
 
 impl RodValidator for RodLiteral {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         // Compare input.to_json() with expected
         // NOTE: This triggers a conversion/clone.
         // Optimization: Implement specialized comparison on RodInput without conversion.
@@ -23,7 +24,7 @@ impl RodValidator for RodLiteral {
         let val = input.to_json();
 
         if val == self.expected {
-            return Ok(val);
+            return Ok(RodValue::Json(val));
         }
 
         Err(RodError::new(

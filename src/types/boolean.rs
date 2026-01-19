@@ -1,16 +1,16 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::{RodError, RodResult};
-use serde_json::Value;
 
 #[derive(Debug, Clone, Default)]
 pub struct RodBoolean;
 
 impl RodValidator for RodBoolean {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         if input.get_type() == DataType::Boolean {
             let val = input.as_bool().unwrap_or(false);
-            return Ok(Value::Bool(val));
+            return Ok(RodValue::Boolean(val));
         }
         Err(RodError::new("invalid_type", "Expected boolean"))
     }

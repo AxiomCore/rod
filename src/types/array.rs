@@ -1,7 +1,7 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::{RodError, RodResult};
-use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct RodArray {
@@ -33,7 +33,7 @@ impl RodArray {
 }
 
 impl RodValidator for RodArray {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         if input.get_type() == DataType::Array {
             let mut issues = Vec::new();
             let len = input.count().unwrap_or(0);
@@ -70,7 +70,11 @@ impl RodValidator for RodArray {
             let mut valid_items = Vec::with_capacity(len);
             for i in 0..len {
                 if let Some(item_input) = input.get_index(i) {
-                    match self.schema.validate(item_input.as_ref()) {
+                    // item_input is Box<dyn RodInput<'a> + '_>.
+                    // We borrow it (&*item_input) to get &dyn RodInput<'a>.
+                    // Since the returned RodValue is tied to 'a (data source),
+                    // NOT the temporary reference, this is valid.
+                    match self.schema.validate(&*item_input) {
                         Ok(val) => valid_items.push(val),
                         Err(mut e) => {
                             e.prepend_path(&i.to_string());
@@ -84,7 +88,7 @@ impl RodValidator for RodArray {
                 return Err(RodError { issues });
             }
 
-            return Ok(Value::Array(valid_items));
+            return Ok(RodValue::Array(valid_items));
         }
 
         Err(RodError::new("invalid_type", "Expected array"))

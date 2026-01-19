@@ -1,7 +1,7 @@
 use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::RodResult;
-use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct RodIntersection {
@@ -16,19 +16,17 @@ impl RodIntersection {
 }
 
 impl RodValidator for RodIntersection {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         // Validate against both
         let v1 = self.left.validate(input)?;
         let v2 = self.right.validate(input)?;
 
         // Merging logic for objects
         match (v1, v2) {
-            (Value::Object(mut o1), Value::Object(o2)) => {
+            (RodValue::Object(mut o1), RodValue::Object(o2)) => {
                 // Merge o2 into o1
-                for (k, v) in o2 {
-                    o1.insert(k, v);
-                }
-                Ok(Value::Object(o1))
+                o1.extend(o2);
+                Ok(RodValue::Object(o1))
             }
             (_, v2) => {
                 // For primitives, they must match (effectively refining the type)

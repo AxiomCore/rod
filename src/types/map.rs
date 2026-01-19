@@ -1,7 +1,7 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::{RodError, RodResult};
-use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct RodMap {
@@ -19,7 +19,7 @@ impl RodMap {
 }
 
 impl RodValidator for RodMap {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         // Expecting Array of [Key, Value] tuples
         if input.get_type() != DataType::Array {
             return Err(RodError::new(
@@ -57,7 +57,8 @@ impl RodValidator for RodMap {
                     let v_res = self.value_type.validate(val_input.as_ref());
 
                     match (k_res, v_res) {
-                        (Ok(k), Ok(v)) => valid_entries.push(Value::Array(vec![k, v])),
+                        (Ok(k), Ok(v)) => valid_entries
+                            .push(RodValue::Array(vec![k.into_owned(), v.into_owned()])),
                         (Err(mut e), _) => {
                             e.prepend_path(&format!("{}.key", i));
                             issues.extend(e.issues);
@@ -83,7 +84,7 @@ impl RodValidator for RodMap {
         if !issues.is_empty() {
             return Err(RodError { issues });
         }
-        return Ok(Value::Array(valid_entries));
+        return Ok(RodValue::Array(valid_entries));
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

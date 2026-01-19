@@ -1,8 +1,8 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::{RodError, RodResult};
 use crate::types::enum_type::{RodEnum, enum_type};
-use serde_json::{Map, Value};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -18,8 +18,6 @@ pub struct RodObject {
     unknown_keys: UnknownKeys,
 }
 
-// ... impl Debug, new, strict, strip, passthrough, keyof, deep_partial ...
-// (These methods don't change, copy from previous implementation)
 impl std::fmt::Debug for RodObject {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RodObject")
@@ -66,30 +64,24 @@ impl RodObject {
 }
 
 impl RodValidator for RodObject {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         if input.get_type() == DataType::Object {
-            let mut output = Map::new();
+            let mut output = Vec::new();
             let mut issues = Vec::new();
 
             // 1. Validate Shape
             for (key, validator) in &self.shape {
-                // Try to get key from input
                 match input.get_key(key) {
-                    Some(val_input) => {
-                        // Check for explicit undefined/null if needed?
-                        // RodInput usually abstracts this. If get_key returns Some, value exists.
-                        match validator.validate(val_input.as_ref()) {
-                            Ok(v) => {
-                                output.insert(key.clone(), v);
-                            }
-                            Err(mut e) => {
-                                e.prepend_path(key);
-                                issues.extend(e.issues);
-                            }
+                    Some(val_input) => match validator.validate(val_input.as_ref()) {
+                        Ok(v) => {
+                            output.push((std::borrow::Cow::Owned(key.clone()), v));
                         }
-                    }
+                        Err(mut e) => {
+                            e.prepend_path(key);
+                            issues.extend(e.issues);
+                        }
+                    },
                     None => {
-                        // Missing key
                         if !validator.is_optional() {
                             issues.push(crate::error::RodIssue {
                                 details: crate::error::RodIssueCode::InvalidType {
@@ -105,7 +97,6 @@ impl RodValidator for RodObject {
             }
 
             // 2. Handle Unknown Keys
-            // We need to iterate over input keys
             if let Some(keys_iter) = input.keys() {
                 for key in keys_iter {
                     if !self.shape.contains_key(&key) {
@@ -120,11 +111,12 @@ impl RodValidator for RodObject {
                                 });
                             }
                             UnknownKeys::Passthrough => {
-                                // We need to get the value to insert it.
                                 if let Some(val_input) = input.get_key(&key) {
-                                    // Hack: convert input back to JSON value to insert into output
-                                    // This breaks zero-copy for passthrough data, but that's unavoidable for output.
-                                    output.insert(key, val_input.to_json());
+                                    // Slow path for Passthrough: convert to Owned JSON
+                                    output.push((
+                                        std::borrow::Cow::Owned(key),
+                                        RodValue::Json(val_input.to_json()),
+                                    ));
                                 }
                             }
                             UnknownKeys::Strip => {}
@@ -137,7 +129,7 @@ impl RodValidator for RodObject {
                 return Err(RodError { issues });
             }
 
-            return Ok(Value::Object(output));
+            return Ok(RodValue::Object(output));
         }
 
         Err(RodError::new("invalid_type", "Expected object"))

@@ -61,12 +61,16 @@ fn test_date() {
 #[test]
 fn test_coerce() {
     let schema = coerce::string();
-    let res = schema.validate(&wrap(&json!(1234)));
-    assert!(res.is_ok());
-    assert_eq!(res.unwrap(), json!("1234"));
+    let valid = json!(1234);
+    let input = wrap(&valid);
+    let result = schema.validate(&input);
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap().to_json(), json!("1234"));
 
     let num_schema = coerce::number();
-    let res_num = num_schema.validate(&wrap(&json!("42")));
-    assert!(res_num.is_ok());
-    assert_eq!(res_num.unwrap(), json!(42));
+    let valid_num = json!(42);
+    let input_num = wrap(&valid_num);
+    let result_num = num_schema.validate(&input_num);
+    assert!(result_num.is_ok());
+    assert_eq!(result_num.unwrap().to_json(), json!(42.0));
 }

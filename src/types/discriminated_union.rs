@@ -1,7 +1,7 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::{RodError, RodResult};
-use serde_json::Value;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -20,7 +20,7 @@ impl RodDiscriminatedUnion {
 }
 
 impl RodValidator for RodDiscriminatedUnion {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         // 1. Check if input is an object
         if input.get_type() != DataType::Object {
             return Err(RodError::new("invalid_type", "Expected object"));
@@ -31,6 +31,7 @@ impl RodValidator for RodDiscriminatedUnion {
         let disc_input = match input.get_key(&self.discriminator) {
             Some(v) => v,
             None => {
+                // Try checking raw if needed? RodInput usually handles this.
                 return Err(RodError::new(
                     "invalid_discriminator",
                     "Discriminator key missing",
@@ -39,6 +40,7 @@ impl RodValidator for RodDiscriminatedUnion {
         };
 
         // Ensure it is a string
+        // Note: as_str might return Option<&str> or Option<Cow<str>>
         let disc_value = match disc_input.as_str() {
             Some(s) => s,
             None => {
@@ -50,7 +52,7 @@ impl RodValidator for RodDiscriminatedUnion {
         };
 
         // 3. Select matching validator
-        if let Some(validator) = self.options.get(disc_value) {
+        if let Some(validator) = self.options.get(disc_value.as_ref()) {
             return validator.validate(input);
         }
 

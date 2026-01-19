@@ -1,8 +1,8 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::{RodError, RodIssue, RodIssueCode, RodResult};
 use chrono::{DateTime, Utc};
-use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct RodDate {
@@ -37,7 +37,7 @@ impl RodDate {
 }
 
 impl RodValidator for RodDate {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         // We expect an ISO string by default for JSON compatibility
         if input.get_type() != DataType::String {
             return Err(RodError::new("invalid_type", "Expected date string"));
@@ -48,7 +48,7 @@ impl RodValidator for RodDate {
             .ok_or_else(|| RodError::new("internal", "Failed to read string"))?;
 
         // Parse using chrono
-        let dt = match DateTime::parse_from_rfc3339(date_str) {
+        let dt = match DateTime::parse_from_rfc3339(date_str.as_ref()) {
             Ok(dt) => dt.with_timezone(&Utc),
             Err(_) => {
                 return Err(RodError::new("invalid_date", "Invalid date format"));
@@ -90,8 +90,8 @@ impl RodValidator for RodDate {
             return Err(RodError { issues });
         }
 
-        // Return original value
-        Ok(Value::String(date_str.to_string()))
+        // Return RodValue::String (borrowed)
+        Ok(RodValue::String(date_str))
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

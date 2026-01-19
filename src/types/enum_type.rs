@@ -1,7 +1,7 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::{RodError, RodResult};
-use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct RodEnum {
@@ -15,11 +15,11 @@ impl RodEnum {
 }
 
 impl RodValidator for RodEnum {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         if input.get_type() == DataType::String {
             if let Some(s) = input.as_str() {
-                if self.values.iter().any(|v| v == s) {
-                    return Ok(Value::String(s.to_string()));
+                if self.values.iter().any(|v| v == s.as_ref()) {
+                    return Ok(RodValue::String(s));
                 }
             }
         }

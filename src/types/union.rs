@@ -1,7 +1,7 @@
 use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::{RodError, RodResult};
-use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct RodUnion {
@@ -15,7 +15,7 @@ impl RodUnion {
 }
 
 impl RodValidator for RodUnion {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         for validator in &self.options {
             if let Ok(val) = validator.validate(input) {
                 return Ok(val);
