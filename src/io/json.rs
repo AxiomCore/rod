@@ -1,11 +1,11 @@
-// src/io/json.rs
 use crate::core::input::{DataType, RodInput};
 use serde_json::Value;
+use std::borrow::Cow;
 
 #[derive(Debug)]
 pub struct JsonInput<'a>(pub &'a Value);
 
-impl<'a> RodInput for JsonInput<'a> {
+impl<'a> RodInput<'a> for JsonInput<'a> {
     fn get_type(&self) -> DataType {
         match self.0 {
             Value::String(_) => DataType::String,
@@ -17,8 +17,9 @@ impl<'a> RodInput for JsonInput<'a> {
         }
     }
 
-    fn as_str(&self) -> Option<&str> {
-        self.0.as_str()
+    fn as_str(&self) -> Option<Cow<'a, str>> {
+        // self.0 is &'a Value. as_str() returns &'a str.
+        self.0.as_str().map(Cow::Borrowed)
     }
 
     fn as_f64(&self) -> Option<f64> {
@@ -33,16 +34,16 @@ impl<'a> RodInput for JsonInput<'a> {
         self.0.as_bool()
     }
 
-    fn get_key(&self, key: &str) -> Option<Box<dyn RodInput + '_>> {
+    fn get_key(&self, key: &str) -> Option<Box<dyn RodInput<'a> + '_>> {
         self.0
             .get(key)
-            .map(|v| Box::new(JsonInput(v)) as Box<dyn RodInput>)
+            .map(|v| Box::new(JsonInput(v)) as Box<dyn RodInput<'a>>)
     }
 
-    fn get_index(&self, index: usize) -> Option<Box<dyn RodInput + '_>> {
+    fn get_index(&self, index: usize) -> Option<Box<dyn RodInput<'a> + '_>> {
         self.0
             .get(index)
-            .map(|v| Box::new(JsonInput(v)) as Box<dyn RodInput>)
+            .map(|v| Box::new(JsonInput(v)) as Box<dyn RodInput<'a>>)
     }
 
     fn count(&self) -> Option<usize> {

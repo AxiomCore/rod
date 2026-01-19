@@ -1,10 +1,10 @@
-// src/types/string.rs
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::{RodError, RodIssue, RodIssueCode, RodResult};
 use lazy_static::lazy_static;
 use regex::Regex;
-use serde_json::Value;
+use std::borrow::Cow;
 
 lazy_static! {
     static ref EMAIL_REGEX: Regex = Regex::new(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$").unwrap();
@@ -110,7 +110,7 @@ impl RodString {
 }
 
 impl RodValidator for RodString {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         // 1. Check Type
         if input.get_type() != DataType::String {
             return Err(RodError::with_issue(
@@ -123,22 +123,24 @@ impl RodValidator for RodString {
         }
 
         // 2. Get Reference (Zero Copy)
-        let s_ref = input
+        let s_cow = input
             .as_str()
             .ok_or_else(|| RodError::new("internal", "Failed to read string from input"))?;
 
-        // Handle transforms (trim)
-        // If we trim, we must allocate a new string.
-        let val_str = if self.should_trim {
-            s_ref.trim().to_string()
+        // 3. Handle Transforms (trim)
+        // If we trim a Borrowed string, we get a sub-slice, which is also Borrowed.
+        // This avoids allocation completely.
+        let val_cow = if self.should_trim {
+            match s_cow {
+                Cow::Borrowed(s) => Cow::Borrowed(s.trim()),
+                Cow::Owned(s) => Cow::Owned(s.trim().to_string()),
+            }
         } else {
-            // Optimization: If no trim, we usually don't need to clone just for checking.
-            // But since RodResult<Value> returns an owned Value, we will clone eventually on success.
-            s_ref.to_string()
+            s_cow
         };
 
         // We check against the (possibly trimmed) string
-        let check_str = &val_str;
+        let check_str = val_cow.as_ref();
 
         let mut issues = Vec::new();
 
@@ -305,8 +307,8 @@ impl RodValidator for RodString {
             return Err(RodError { issues });
         }
 
-        // 3. Return Owned Value (Construct output)
-        Ok(Value::String(val_str))
+        // 3. Return RodValue (Borrowed if possible)
+        Ok(RodValue::String(val_cow))
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

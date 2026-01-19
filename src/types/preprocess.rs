@@ -1,24 +1,23 @@
 use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
+use crate::core::value::{RodValue, RodValueInput};
 use crate::error::RodResult;
-use crate::io::json;
 use serde_json::Value;
 use std::fmt;
 
-// Remove #[derive(Debug)] because F might not be Debug
 #[derive(Clone)]
 pub struct RodPreprocess<F>
 where
-    F: Fn(&dyn RodInput) -> Value + Send + Sync + Clone,
+    // F must accept RodInput with ANY lifetime 'i
+    F: for<'i> Fn(&dyn RodInput<'i>) -> Value + Send + Sync + Clone,
 {
     preprocessor: F,
     schema: Box<dyn RodValidator>,
 }
 
-// Manual Debug implementation
 impl<F> fmt::Debug for RodPreprocess<F>
 where
-    F: Fn(&dyn RodInput) -> Value + Send + Sync + Clone,
+    F: for<'i> Fn(&dyn RodInput<'i>) -> Value + Send + Sync + Clone,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RodPreprocess")
@@ -30,7 +29,7 @@ where
 
 impl<F> RodPreprocess<F>
 where
-    F: Fn(&dyn RodInput) -> Value + Send + Sync + Clone,
+    F: for<'i> Fn(&dyn RodInput<'i>) -> Value + Send + Sync + Clone,
 {
     pub fn new(preprocessor: F, schema: Box<dyn RodValidator>) -> Self {
         Self {
@@ -42,21 +41,31 @@ where
 
 impl<F> RodValidator for RodPreprocess<F>
 where
-    F: Fn(&dyn RodInput) -> Value + Send + Sync + Clone + 'static,
+    F: for<'i> Fn(&dyn RodInput<'i>) -> Value + Send + Sync + Clone + 'static,
 {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         // 1. Transform Input
         let processed_value = (self.preprocessor)(input);
 
-        // 2. Wrap in JsonInput adapter
-        let wrapped_input = json::wrap(&processed_value);
+        // 2. Wrap the owned JSON value into RodValue::Json
+        // This 'rod_val' lives on the stack of this function.
+        let rod_val = RodValue::Json(processed_value);
 
-        // 3. Validate using the wrapped input
-        self.schema.validate(&wrapped_input)
+        // 3. Create an adapter to allow the schema to validate this RodValue
+        let wrapped_input = RodValueInput(&rod_val);
+
+        // 4. Validate
+        // 'result' here is RodValue tied to the lifetime of 'rod_val' (stack).
+        // It cannot be returned directly because 'rod_val' drops at end of function.
+        let result = self.schema.validate(&wrapped_input)?;
+
+        // 5. Convert to Owned
+        // This copies any borrowed data into owned strings/vecs, effectively
+        // changing the lifetime to 'static, which satisfies return type RodValue<'a>.
+        Ok(result.into_owned())
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
-        // Preprocess lost? Zod says yes.
         self.schema.deep_partial_boxed()
     }
 
@@ -67,7 +76,7 @@ where
 
 pub fn preprocess<F, V>(preprocessor: F, schema: V) -> RodPreprocess<F>
 where
-    F: Fn(&dyn RodInput) -> Value + Send + Sync + Clone + 'static,
+    F: for<'i> Fn(&dyn RodInput<'i>) -> Value + Send + Sync + Clone + 'static,
     V: RodValidator + 'static,
 {
     RodPreprocess::new(preprocessor, Box::new(schema))

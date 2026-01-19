@@ -1,7 +1,7 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::{RodError, RodIssue, RodResult};
-use serde_json::Value;
 
 #[derive(Debug, Clone, Default)]
 pub struct RodNumber {
@@ -29,7 +29,7 @@ impl RodNumber {
 }
 
 impl RodValidator for RodNumber {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         if input.get_type() == DataType::Number {
             // Get value
             let val = input
@@ -84,9 +84,8 @@ impl RodValidator for RodNumber {
                 return Err(RodError { issues });
             }
 
-            // Return owned value
-            // Return owned value
-            return Ok(input.to_json());
+            // Return RodValue::Number
+            return Ok(RodValue::Number(val));
         }
 
         Err(RodError::new("invalid_type", "Expected number"))

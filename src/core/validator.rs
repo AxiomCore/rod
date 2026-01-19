@@ -1,11 +1,12 @@
-use crate::core::input::RodInput; // Import the trait
+use crate::core::input::RodInput;
+use crate::core::value::RodValue;
 use crate::error::RodResult;
-use serde_json::Value;
 use std::fmt::Debug;
 
 pub trait RodValidator: Send + Sync + Debug {
-    // CHANGE: Input is now &dyn RodInput
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value>;
+    // input is a reference to a trait object that handles data of lifetime 'a.
+    // The reference itself (&) can be short-lived.
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>>;
 
     fn is_optional(&self) -> bool {
         false
@@ -23,7 +24,7 @@ impl Clone for Box<dyn RodValidator> {
 }
 
 impl RodValidator for Box<dyn RodValidator> {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         (**self).validate(input)
     }
 

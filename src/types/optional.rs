@@ -1,7 +1,7 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::RodResult;
-use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct RodOptional {
@@ -15,7 +15,7 @@ impl RodOptional {
 }
 
 impl RodValidator for RodOptional {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         // If input is explicitly null, Zod treats it as invalid for optional unless .nullable()
         // But RodInput treats missing keys as... handled by parent object loop.
         // If we are here, the value exists (it might be Null or Undefined type).
@@ -23,7 +23,7 @@ impl RodValidator for RodOptional {
         // Note: DataType::Undefined usually means JS `undefined`.
         if input.get_type() == DataType::Undefined {
             // Valid optional
-            return Ok(Value::Null); // or Value::Null representing undefined? serde_json uses Null.
+            return Ok(RodValue::Null); // or Value::Null representing undefined? serde_json uses Null.
         }
 
         // Pass through

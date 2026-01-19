@@ -1,14 +1,14 @@
 use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::{RodError, RodResult};
-use serde_json::Value;
 
 // ANY
 #[derive(Debug, Clone, Default)]
 pub struct RodAny;
 impl RodValidator for RodAny {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
-        Ok(input.to_json())
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
+        Ok(RodValue::Json(input.to_json()))
     }
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
         use crate::types::optional::OptionalExtension;
@@ -26,7 +26,7 @@ pub fn any() -> RodAny {
 #[derive(Debug, Clone, Default)]
 pub struct RodNever;
 impl RodValidator for RodNever {
-    fn validate(&self, _input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, _input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         Err(RodError::new("invalid_type", "Expected never"))
     }
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

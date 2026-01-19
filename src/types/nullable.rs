@@ -1,7 +1,7 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::RodResult;
-use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct RodNullable {
@@ -15,9 +15,9 @@ impl RodNullable {
 }
 
 impl RodValidator for RodNullable {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         if input.get_type() == DataType::Null {
-            return Ok(Value::Null);
+            return Ok(RodValue::Null);
         }
         self.inner.validate(input)
     }

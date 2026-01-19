@@ -1,5 +1,6 @@
 use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::{RodError, RodResult};
 use serde_json::Value;
 use std::fmt;
@@ -40,11 +41,11 @@ impl<F> RodValidator for RodRefine<F>
 where
     F: Fn(&Value) -> Result<(), String> + Send + Sync + Clone + 'static,
 {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
-        // 1. Validate Inner (creates owned Value)
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
+        // 1. Validate Inner
         let val = self.schema.validate(input)?;
-        // 2. Check on Value
-        if let Err(msg) = (self.check)(&val) {
+        // 2. Check on Value (convert to owned JSON for check)
+        if let Err(msg) = (self.check)(&val.to_json()) {
             return Err(RodError::new("custom_error", &msg));
         }
         Ok(val)
@@ -99,9 +100,10 @@ impl<F> RodValidator for RodTransform<F>
 where
     F: Fn(Value) -> Value + Send + Sync + Clone + 'static,
 {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         let val = self.schema.validate(input)?;
-        Ok((self.transformer)(val))
+        let json_val = val.to_json();
+        Ok(RodValue::Json((self.transformer)(json_val)))
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

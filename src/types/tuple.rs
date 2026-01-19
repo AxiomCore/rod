@@ -1,7 +1,7 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::{RodError, RodResult};
-use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct RodTuple {
@@ -15,7 +15,7 @@ impl RodTuple {
 }
 
 impl RodValidator for RodTuple {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         if input.get_type() != DataType::Array {
             return Err(RodError::new("invalid_type", "Expected tuple (array)"));
         }
@@ -34,7 +34,7 @@ impl RodValidator for RodTuple {
         for (i, validator) in self.items.iter().enumerate() {
             if let Some(item_input) = input.get_index(i) {
                 match validator.validate(item_input.as_ref()) {
-                    Ok(val) => valid_items.push(val),
+                    Ok(val) => valid_items.push(val.into_owned()),
                     Err(mut e) => {
                         e.prepend_path(&i.to_string());
                         issues.extend(e.issues);
@@ -47,7 +47,7 @@ impl RodValidator for RodTuple {
             return Err(RodError { issues });
         }
 
-        return Ok(Value::Array(valid_items));
+        return Ok(RodValue::Array(valid_items));
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

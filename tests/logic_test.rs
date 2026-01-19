@@ -44,12 +44,13 @@ fn test_intersection() {
     let schema = intersection(schema_a, schema_b);
 
     let valid = json!({ "name": "Rod", "age": 1 });
-    let result = schema.validate(&wrap(&valid));
+    let input = wrap(&valid);
+    let result = schema.validate(&input);
     assert!(result.is_ok());
 
-    let output = result.unwrap();
+    let output = result.unwrap().to_json();
     assert_eq!(output.get("name").unwrap(), "Rod");
-    assert_eq!(output.get("age").unwrap(), 1);
+    assert_eq!(output.get("age").unwrap(), 1.0);
 }
 
 #[test]
@@ -66,10 +67,11 @@ fn test_refine_transform() {
         }),
         |v| json!(v.as_str().unwrap().to_uppercase()),
     );
-
-    let res = schema.validate(&wrap(&json!("racecar")));
-    assert!(res.is_ok());
-    assert_eq!(res.unwrap(), json!("RACECAR"));
+    let valid = json!("racecar");
+    let input = wrap(&valid);
+    let result = schema.validate(&input);
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap().to_json(), json!("RACECAR"));
 }
 
 #[test]

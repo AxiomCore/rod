@@ -1,7 +1,7 @@
 use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::RodResult;
-use serde_json::Value;
 use std::fmt;
 use std::sync::Arc;
 
@@ -35,7 +35,7 @@ impl RodLazy {
 }
 
 impl RodValidator for RodLazy {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         let validator = (self.builder)();
         validator.validate(input)
     }

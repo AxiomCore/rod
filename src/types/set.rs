@@ -1,7 +1,7 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
+use crate::core::value::RodValue;
 use crate::error::{RodError, RodResult};
-use serde_json::Value;
 use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
@@ -30,7 +30,7 @@ impl RodSet {
 }
 
 impl RodValidator for RodSet {
-    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         if input.get_type() != DataType::Array {
             return Err(RodError::new("invalid_type", "Expected array (set)"));
         }
@@ -56,7 +56,7 @@ impl RodValidator for RodSet {
                 }
 
                 match self.value_type.validate(item_input.as_ref()) {
-                    Ok(v) => valid_items.push(v),
+                    Ok(v) => valid_items.push(v.into_owned()),
                     Err(mut e) => {
                         e.prepend_path(&i.to_string());
                         issues.extend(e.issues);
@@ -98,7 +98,7 @@ impl RodValidator for RodSet {
         }
 
         // Return as Array (JSON doesn't have Set type)
-        return Ok(Value::Array(valid_items));
+        return Ok(RodValue::Array(valid_items));
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
