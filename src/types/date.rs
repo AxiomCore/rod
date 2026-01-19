@@ -1,3 +1,4 @@
+use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::error::{RodError, RodIssue, RodIssueCode, RodResult};
 use chrono::{DateTime, Utc};
@@ -23,7 +24,7 @@ impl RodDate {
         Self::default()
     }
 
-    /// Set minimum date (inclusive) using a timestamp (ms) or ISO string
+    /// Set minimum date (inclusive) using a timestamp (ms)
     pub fn min(mut self, val: i64) -> Self {
         self.min = Some(val);
         self
@@ -36,18 +37,20 @@ impl RodDate {
 }
 
 impl RodValidator for RodDate {
-    fn validate(&self, input: &Value) -> RodResult<Value> {
+    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
         // We expect an ISO string by default for JSON compatibility
-        let date_str = match input {
-            Value::String(s) => s,
-            _ => return Err(RodError::new("invalid_type", "Expected date string")),
-        };
+        if input.get_type() != DataType::String {
+            return Err(RodError::new("invalid_type", "Expected date string"));
+        }
+
+        let date_str = input
+            .as_str()
+            .ok_or_else(|| RodError::new("internal", "Failed to read string"))?;
 
         // Parse using chrono
         let dt = match DateTime::parse_from_rfc3339(date_str) {
             Ok(dt) => dt.with_timezone(&Utc),
             Err(_) => {
-                // Try strictly numeric string? No, Zod defaults strict.
                 return Err(RodError::new("invalid_date", "Invalid date format"));
             }
         };
@@ -88,7 +91,7 @@ impl RodValidator for RodDate {
         }
 
         // Return original value
-        Ok(input.clone())
+        Ok(Value::String(date_str.to_string()))
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

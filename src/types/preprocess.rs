@@ -1,5 +1,7 @@
+use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
 use crate::error::RodResult;
+use crate::io::json;
 use serde_json::Value;
 use std::fmt;
 
@@ -7,7 +9,7 @@ use std::fmt;
 #[derive(Clone)]
 pub struct RodPreprocess<F>
 where
-    F: Fn(&Value) -> Value + Send + Sync + Clone,
+    F: Fn(&dyn RodInput) -> Value + Send + Sync + Clone,
 {
     preprocessor: F,
     schema: Box<dyn RodValidator>,
@@ -16,7 +18,7 @@ where
 // Manual Debug implementation
 impl<F> fmt::Debug for RodPreprocess<F>
 where
-    F: Fn(&Value) -> Value + Send + Sync + Clone,
+    F: Fn(&dyn RodInput) -> Value + Send + Sync + Clone,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RodPreprocess")
@@ -28,7 +30,7 @@ where
 
 impl<F> RodPreprocess<F>
 where
-    F: Fn(&Value) -> Value + Send + Sync + Clone,
+    F: Fn(&dyn RodInput) -> Value + Send + Sync + Clone,
 {
     pub fn new(preprocessor: F, schema: Box<dyn RodValidator>) -> Self {
         Self {
@@ -40,11 +42,17 @@ where
 
 impl<F> RodValidator for RodPreprocess<F>
 where
-    F: Fn(&Value) -> Value + Send + Sync + Clone + 'static,
+    F: Fn(&dyn RodInput) -> Value + Send + Sync + Clone + 'static,
 {
-    fn validate(&self, input: &Value) -> RodResult<Value> {
-        let processed = (self.preprocessor)(input);
-        self.schema.validate(&processed)
+    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+        // 1. Transform Input
+        let processed_value = (self.preprocessor)(input);
+
+        // 2. Wrap in JsonInput adapter
+        let wrapped_input = json::wrap(&processed_value);
+
+        // 3. Validate using the wrapped input
+        self.schema.validate(&wrapped_input)
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
@@ -59,7 +67,7 @@ where
 
 pub fn preprocess<F, V>(preprocessor: F, schema: V) -> RodPreprocess<F>
 where
-    F: Fn(&Value) -> Value + Send + Sync + Clone + 'static, // Added 'static
+    F: Fn(&dyn RodInput) -> Value + Send + Sync + Clone + 'static,
     V: RodValidator + 'static,
 {
     RodPreprocess::new(preprocessor, Box::new(schema))

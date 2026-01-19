@@ -1,4 +1,4 @@
-// src/types/map.rs
+use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::error::{RodError, RodResult};
 use serde_json::Value;
@@ -19,15 +19,24 @@ impl RodMap {
 }
 
 impl RodValidator for RodMap {
-    fn validate(&self, input: &Value) -> RodResult<Value> {
+    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
         // Expecting Array of [Key, Value] tuples
-        if let Value::Array(entries) = input {
-            let mut valid_entries = Vec::new();
-            let mut issues = Vec::new();
+        if input.get_type() != DataType::Array {
+            return Err(RodError::new(
+                "invalid_type",
+                "Expected array of entries for Map",
+            ));
+        }
 
-            for (i, entry) in entries.iter().enumerate() {
-                if let Value::Array(pair) = entry {
-                    if pair.len() != 2 {
+        let mut valid_entries = Vec::new();
+        let mut issues = Vec::new();
+        let len = input.count().unwrap_or(0);
+
+        for i in 0..len {
+            if let Some(entry_input) = input.get_index(i) {
+                // entry_input must be an array of length 2
+                if entry_input.get_type() == DataType::Array {
+                    if entry_input.count() != Some(2) {
                         issues.push(crate::error::RodIssue {
                             details: crate::error::RodIssueCode::Custom {
                                 message: "Map entry must be a [key, value] tuple".to_string(),
@@ -39,10 +48,13 @@ impl RodValidator for RodMap {
                         continue;
                     }
 
+                    let key_input = entry_input.get_index(0).unwrap();
+                    let val_input = entry_input.get_index(1).unwrap();
+
                     // Validate Key
-                    let k_res = self.key_type.validate(&pair[0]);
+                    let k_res = self.key_type.validate(key_input.as_ref());
                     // Validate Value
-                    let v_res = self.value_type.validate(&pair[1]);
+                    let v_res = self.value_type.validate(val_input.as_ref());
 
                     match (k_res, v_res) {
                         (Ok(k), Ok(v)) => valid_entries.push(Value::Array(vec![k, v])),
@@ -66,17 +78,12 @@ impl RodValidator for RodMap {
                     });
                 }
             }
-
-            if !issues.is_empty() {
-                return Err(RodError { issues });
-            }
-            return Ok(Value::Array(valid_entries));
         }
 
-        Err(RodError::new(
-            "invalid_type",
-            "Expected array of entries for Map",
-        ))
+        if !issues.is_empty() {
+            return Err(RodError { issues });
+        }
+        return Ok(Value::Array(valid_entries));
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

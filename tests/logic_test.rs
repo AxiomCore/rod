@@ -1,3 +1,4 @@
+use rod::io::json::wrap;
 use rod::types::object::object;
 use rod::{
     RodValidator, any, enum_type, intersection, lazy, literal, never, number, refine, rod_obj,
@@ -9,18 +10,18 @@ use std::collections::HashMap; // for manual map construction if needed
 #[test]
 fn test_union_literal_enum() {
     let role_schema = union(vec![Box::new(literal("admin")), Box::new(literal("user"))]);
-    assert!(role_schema.validate(&json!("admin")).is_ok());
-    assert!(role_schema.validate(&json!("guest")).is_err());
+    assert!(role_schema.validate(&wrap(&json!("admin"))).is_ok());
+    assert!(role_schema.validate(&wrap(&json!("guest"))).is_err());
 
     let status_schema = enum_type(vec!["active", "inactive"]);
-    assert!(status_schema.validate(&json!("active")).is_ok());
-    assert!(status_schema.validate(&json!("deleted")).is_err());
+    assert!(status_schema.validate(&wrap(&json!("active"))).is_ok());
+    assert!(status_schema.validate(&wrap(&json!("deleted"))).is_err());
 
     let any_schema = any();
-    assert!(any_schema.validate(&json!("whatever")).is_ok());
+    assert!(any_schema.validate(&wrap(&json!("whatever"))).is_ok());
 
     let never_schema = never();
-    assert!(never_schema.validate(&json!("anything")).is_err());
+    assert!(never_schema.validate(&wrap(&json!("anything"))).is_err());
 }
 
 #[test]
@@ -43,7 +44,7 @@ fn test_intersection() {
     let schema = intersection(schema_a, schema_b);
 
     let valid = json!({ "name": "Rod", "age": 1 });
-    let result = schema.validate(&valid);
+    let result = schema.validate(&wrap(&valid));
     assert!(result.is_ok());
 
     let output = result.unwrap();
@@ -66,7 +67,7 @@ fn test_refine_transform() {
         |v| json!(v.as_str().unwrap().to_uppercase()),
     );
 
-    let res = schema.validate(&json!("racecar"));
+    let res = schema.validate(&wrap(&json!("racecar")));
     assert!(res.is_ok());
     assert_eq!(res.unwrap(), json!("RACECAR"));
 }
@@ -75,8 +76,8 @@ fn test_refine_transform() {
 fn test_lazy() {
     // Simple lazy test
     let schema = lazy(|| Box::new(string()));
-    assert!(schema.validate(&json!("hello")).is_ok());
-    assert!(schema.validate(&json!(123)).is_err());
+    assert!(schema.validate(&wrap(&json!("hello"))).is_ok());
+    assert!(schema.validate(&wrap(&json!(123))).is_err());
 }
 
 #[test]
@@ -93,12 +94,12 @@ fn test_discriminated_union() {
 
     assert!(
         shapes
-            .validate(&json!({ "kind": "circle", "radius": 10 }))
+            .validate(&wrap(&json!({ "kind": "circle", "radius": 10 })))
             .is_ok()
     );
     assert!(
         shapes
-            .validate(&json!({ "kind": "triangle", "side": 10 }))
+            .validate(&wrap(&json!({ "kind": "triangle", "side": 10 })))
             .is_err()
     );
 }

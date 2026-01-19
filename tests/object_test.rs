@@ -1,3 +1,4 @@
+use rod::io::json::wrap;
 use rod::{
     NullableExtension, OptionalExtension, RodValidator, boolean, number, record, rod_obj, string,
 };
@@ -24,7 +25,7 @@ fn test_macro_object() {
         "tags": ["rust", "zod"]
     });
 
-    assert!(schema.validate(&valid).is_ok());
+    assert!(schema.validate(&wrap(&valid)).is_ok());
 
     let invalid = json!({
         "name": "R",
@@ -33,15 +34,19 @@ fn test_macro_object() {
         "tags": []
     });
 
-    let err = schema.validate(&invalid).unwrap_err();
+    let err = schema.validate(&wrap(&invalid)).unwrap_err();
     assert_eq!(err.issues.len(), 4);
 }
 
 #[test]
 fn test_record() {
     let schema = record(string().min(2), number());
-    assert!(schema.validate(&json!({ "score": 10, "hp": 100 })).is_ok());
-    assert!(schema.validate(&json!({ "a": 1 })).is_err()); // Key too short
+    assert!(
+        schema
+            .validate(&wrap(&json!({ "score": 10, "hp": 100 })))
+            .is_ok()
+    );
+    assert!(schema.validate(&wrap(&json!({ "a": 1 }))).is_err()); // Key too short
 }
 
 #[test]
@@ -54,8 +59,8 @@ fn test_deep_partial() {
     };
 
     let partial = schema.deep_partial();
-    assert!(partial.validate(&json!({})).is_ok());
-    assert!(partial.validate(&json!({ "nested": {} })).is_ok());
+    assert!(partial.validate(&wrap(&json!({}))).is_ok());
+    assert!(partial.validate(&wrap(&json!({ "nested": {} }))).is_ok());
 }
 
 #[test]
@@ -65,8 +70,8 @@ fn test_keyof() {
         age: number()
     };
     let keys = schema.keyof();
-    assert!(keys.validate(&json!("name")).is_ok());
-    assert!(keys.validate(&json!("email")).is_err());
+    assert!(keys.validate(&wrap(&json!("name"))).is_ok());
+    assert!(keys.validate(&wrap(&json!("email"))).is_err());
 }
 
 #[test]
@@ -79,17 +84,17 @@ fn test_optional_nullable() {
 
     assert!(
         schema
-            .validate(&json!({ "req": "a", "opt": "b", "null": "c" }))
+            .validate(&wrap(&json!({ "req": "a", "opt": "b", "null": "c" })))
             .is_ok()
     );
     assert!(
         schema
-            .validate(&json!({ "req": "a", "null": null }))
+            .validate(&wrap(&json!({ "req": "a", "null": null })))
             .is_ok()
     ); // opt missing is ok
     assert!(
         schema
-            .validate(&json!({ "opt": "b", "null": "c" }))
+            .validate(&wrap(&json!({ "opt": "b", "null": "c" })))
             .is_err()
     ); // req missing
 }

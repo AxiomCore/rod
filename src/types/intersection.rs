@@ -1,3 +1,4 @@
+use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
 use crate::error::RodResult;
 use serde_json::Value;
@@ -15,7 +16,7 @@ impl RodIntersection {
 }
 
 impl RodValidator for RodIntersection {
-    fn validate(&self, input: &Value) -> RodResult<Value> {
+    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
         // Validate against both
         let v1 = self.left.validate(input)?;
         let v2 = self.right.validate(input)?;
@@ -31,7 +32,6 @@ impl RodValidator for RodIntersection {
             }
             (_, v2) => {
                 // For primitives, they must match (effectively refining the type)
-                // If they are different primitives, it's logically impossible (never), but we return the last successful one.
                 Ok(v2)
             }
         }

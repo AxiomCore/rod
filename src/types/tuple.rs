@@ -1,4 +1,4 @@
-// src/types/tuple.rs
+use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::error::{RodError, RodResult};
 use serde_json::Value;
@@ -15,20 +15,25 @@ impl RodTuple {
 }
 
 impl RodValidator for RodTuple {
-    fn validate(&self, input: &Value) -> RodResult<Value> {
-        if let Value::Array(arr) = input {
-            if arr.len() != self.items.len() {
-                return Err(RodError::new(
-                    "invalid_tuple_size",
-                    &format!("Tuple must contain exactly {} elements", self.items.len()),
-                ));
-            }
+    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+        if input.get_type() != DataType::Array {
+            return Err(RodError::new("invalid_type", "Expected tuple (array)"));
+        }
 
-            let mut valid_items = Vec::new();
-            let mut issues = Vec::new();
+        let len = input.count().unwrap_or(0);
+        if len != self.items.len() {
+            return Err(RodError::new(
+                "invalid_tuple_size",
+                &format!("Tuple must contain exactly {} elements", self.items.len()),
+            ));
+        }
 
-            for (i, validator) in self.items.iter().enumerate() {
-                match validator.validate(&arr[i]) {
+        let mut valid_items = Vec::new();
+        let mut issues = Vec::new();
+
+        for (i, validator) in self.items.iter().enumerate() {
+            if let Some(item_input) = input.get_index(i) {
+                match validator.validate(item_input.as_ref()) {
                     Ok(val) => valid_items.push(val),
                     Err(mut e) => {
                         e.prepend_path(&i.to_string());
@@ -36,15 +41,13 @@ impl RodValidator for RodTuple {
                     }
                 }
             }
-
-            if !issues.is_empty() {
-                return Err(RodError { issues });
-            }
-
-            return Ok(Value::Array(valid_items));
         }
 
-        Err(RodError::new("invalid_type", "Expected tuple (array)"))
+        if !issues.is_empty() {
+            return Err(RodError { issues });
+        }
+
+        return Ok(Value::Array(valid_items));
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

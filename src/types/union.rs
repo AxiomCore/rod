@@ -1,4 +1,4 @@
-// src/types/union.rs
+use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
 use crate::error::{RodError, RodResult};
 use serde_json::Value;
@@ -15,20 +15,15 @@ impl RodUnion {
 }
 
 impl RodValidator for RodUnion {
-    fn validate(&self, input: &Value) -> RodResult<Value> {
-        // Try each option in order
+    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
         for validator in &self.options {
             if let Ok(val) = validator.validate(input) {
                 return Ok(val);
             }
         }
-
-        // If we get here, no schema matched
-        // Zod actually returns specific union errors, but for MVP we return a general error
-        // describing that none matched.
         Err(RodError::new("invalid_union", "Invalid input"))
     }
-
+    // ... clone/partial impls same as before
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
         use crate::types::optional::OptionalExtension;
         let partial_options = self
@@ -38,7 +33,6 @@ impl RodValidator for RodUnion {
             .collect();
         Box::new(RodUnion::new(partial_options).optional())
     }
-
     fn clone_box(&self) -> Box<dyn RodValidator> {
         Box::new(self.clone())
     }

@@ -1,4 +1,4 @@
-// src/types/literal.rs
+use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
 use crate::error::{RodError, RodResult};
 use serde_json::Value;
@@ -15,9 +15,15 @@ impl RodLiteral {
 }
 
 impl RodValidator for RodLiteral {
-    fn validate(&self, input: &Value) -> RodResult<Value> {
-        if input == &self.expected {
-            return Ok(input.clone());
+    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+        // Compare input.to_json() with expected
+        // NOTE: This triggers a conversion/clone.
+        // Optimization: Implement specialized comparison on RodInput without conversion.
+        // For MVP, conversion is acceptable for literals.
+        let val = input.to_json();
+
+        if val == self.expected {
+            return Ok(val);
         }
 
         Err(RodError::new(

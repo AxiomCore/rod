@@ -1,3 +1,5 @@
+// src/types/string.rs
+use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::error::{RodError, RodIssue, RodIssueCode, RodResult};
 use lazy_static::lazy_static;
@@ -11,7 +13,6 @@ lazy_static! {
     static ref CUID_REGEX: Regex = Regex::new(r"^c[^\s-]{8,}$").unwrap();
     static ref CUID2_REGEX: Regex = Regex::new(r"^[a-z][a-z0-9]*$").unwrap();
     static ref ULID_REGEX: Regex = Regex::new(r"^[0-9A-HJKMNP-TV-Z]{26}$").unwrap();
-    // Simple ISO 8601 regex (Zod uses a more complex one, but this covers most JSON cases)
     static ref DATETIME_REGEX: Regex = Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$").unwrap();
     static ref IP_V4_REGEX: Regex = Regex::new(r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$").unwrap();
     static ref IP_V6_REGEX: Regex = Regex::new(r"^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$").unwrap();
@@ -42,8 +43,6 @@ impl RodString {
         Self::default()
     }
 
-    // --- Chainable Builders ---
-
     pub fn min(mut self, val: usize) -> Self {
         self.min = Some(val);
         self
@@ -56,7 +55,6 @@ impl RodString {
         self.length = Some(val);
         self
     }
-
     pub fn email(mut self) -> Self {
         self.is_email = true;
         self
@@ -89,7 +87,6 @@ impl RodString {
         self.is_ip = true;
         self
     }
-
     pub fn starts_with(mut self, val: &str) -> Self {
         self.starts_with = Some(val.to_string());
         self
@@ -102,13 +99,10 @@ impl RodString {
         self.includes = Some(val.to_string());
         self
     }
-
     pub fn regex(mut self, pattern: &str) -> Self {
         self.regex = Some(pattern.to_string());
         self
     }
-
-    // Transformations (technically transforms, but often on string object in zod)
     pub fn trim(mut self) -> Self {
         self.should_trim = true;
         self
@@ -116,187 +110,203 @@ impl RodString {
 }
 
 impl RodValidator for RodString {
-    fn validate(&self, input: &Value) -> RodResult<Value> {
-        if let Value::String(s) = input {
-            let mut val_str = s.clone();
-
-            // Transforms first
-            if self.should_trim {
-                val_str = val_str.trim().to_string();
-            }
-
-            let mut issues = Vec::new();
-
-            // Length Checks
-            if let Some(min) = self.min {
-                if val_str.len() < min {
-                    issues.push(RodIssue {
-                        details: RodIssueCode::TooSmall {
-                            minimum: min as f64,
-                            inclusive: true,
-                            type_: "string".to_string(),
-                        },
-                        message: format!("String must contain at least {} character(s)", min),
-                        path: vec![],
-                    });
-                }
-            }
-            if let Some(max) = self.max {
-                if val_str.len() > max {
-                    issues.push(RodIssue {
-                        details: RodIssueCode::TooBig {
-                            maximum: max as f64,
-                            inclusive: true,
-                            type_: "string".to_string(),
-                        },
-                        message: format!("String must contain at most {} character(s)", max),
-                        path: vec![],
-                    });
-                }
-            }
-            if let Some(len) = self.length {
-                if val_str.len() != len {
-                    issues.push(RodIssue {
-                        details: RodIssueCode::InvalidString {
-                            validation: "length".to_string(),
-                        },
-                        message: format!("String must contain exactly {} character(s)", len),
-                        path: vec![],
-                    });
-                }
-            }
-
-            // Pattern Checks
-            if self.is_email && !EMAIL_REGEX.is_match(&val_str) {
-                issues.push(RodIssue {
-                    details: RodIssueCode::InvalidString {
-                        validation: "email".to_string(),
-                    },
-                    message: "Invalid email".to_string(),
-                    path: vec![],
-                });
-            }
-            if self.is_url && !URL_REGEX.is_match(&val_str) {
-                issues.push(RodIssue {
-                    details: RodIssueCode::InvalidString {
-                        validation: "url".to_string(),
-                    },
-                    message: "Invalid url".to_string(),
-                    path: vec![],
-                });
-            }
-            if self.is_uuid && !UUID_REGEX.is_match(&val_str) {
-                issues.push(RodIssue {
-                    details: RodIssueCode::InvalidString {
-                        validation: "uuid".to_string(),
-                    },
-                    message: "Invalid UUID".to_string(),
-                    path: vec![],
-                });
-            }
-            if self.is_cuid && !CUID_REGEX.is_match(&val_str) {
-                issues.push(RodIssue {
-                    details: RodIssueCode::InvalidString {
-                        validation: "cuid".to_string(),
-                    },
-                    message: "Invalid CUID".to_string(),
-                    path: vec![],
-                });
-            }
-            if self.is_cuid2 && !CUID2_REGEX.is_match(&val_str) {
-                issues.push(RodIssue {
-                    details: RodIssueCode::InvalidString {
-                        validation: "cuid2".to_string(),
-                    },
-                    message: "Invalid CUID2".to_string(),
-                    path: vec![],
-                });
-            }
-            if self.is_ulid && !ULID_REGEX.is_match(&val_str) {
-                issues.push(RodIssue {
-                    details: RodIssueCode::InvalidString {
-                        validation: "ulid".to_string(),
-                    },
-                    message: "Invalid ULID".to_string(),
-                    path: vec![],
-                });
-            }
-            if self.is_datetime && !DATETIME_REGEX.is_match(&val_str) {
-                issues.push(RodIssue {
-                    details: RodIssueCode::InvalidDate,
-                    message: "Invalid datetime".to_string(),
-                    path: vec![],
-                });
-            }
-            if self.is_ip && !(IP_V4_REGEX.is_match(&val_str) || IP_V6_REGEX.is_match(&val_str)) {
-                issues.push(RodIssue {
-                    details: RodIssueCode::InvalidString {
-                        validation: "ip".to_string(),
-                    },
-                    message: "Invalid IP address".to_string(),
-                    path: vec![],
-                });
-            }
-
-            // Content Checks
-            if let Some(start) = &self.starts_with {
-                if !val_str.starts_with(start) {
-                    issues.push(RodIssue {
-                        details: RodIssueCode::InvalidString {
-                            validation: "starts_with".to_string(),
-                        },
-                        message: format!("Must start with \"{}\"", start),
-                        path: vec![],
-                    });
-                }
-            }
-            if let Some(end) = &self.ends_with {
-                if !val_str.ends_with(end) {
-                    issues.push(RodIssue {
-                        details: RodIssueCode::InvalidString {
-                            validation: "ends_with".to_string(),
-                        },
-                        message: format!("Must end with \"{}\"", end),
-                        path: vec![],
-                    });
-                }
-            }
-            if let Some(inc) = &self.includes {
-                if !val_str.contains(inc) {
-                    issues.push(RodIssue {
-                        details: RodIssueCode::InvalidString {
-                            validation: "includes".to_string(),
-                        },
-                        message: format!("Must include \"{}\"", inc),
-                        path: vec![],
-                    });
-                }
-            }
-            if let Some(pattern) = &self.regex {
-                if let Ok(re) = Regex::new(pattern) {
-                    if !re.is_match(&val_str) {
-                        issues.push(RodIssue {
-                            details: RodIssueCode::InvalidString {
-                                validation: "regex".to_string(),
-                            },
-                            message: "Invalid".to_string(),
-                            path: vec![],
-                        });
-                    }
-                }
-            }
-
-            if !issues.is_empty() {
-                return Err(RodError { issues });
-            }
-
-            return Ok(Value::String(val_str)); // Return possibly trimmed string
+    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+        // 1. Check Type
+        if input.get_type() != DataType::String {
+            return Err(RodError::with_issue(
+                RodIssueCode::InvalidType {
+                    expected: "string".to_string(),
+                    received: format!("{:?}", input.get_type()).to_lowercase(),
+                },
+                format!("Expected string, received {:?}", input.get_type()),
+            ));
         }
 
-        Err(RodError::new(
-            "invalid_type",
-            "Expected string, received something else",
-        ))
+        // 2. Get Reference (Zero Copy)
+        let s_ref = input
+            .as_str()
+            .ok_or_else(|| RodError::new("internal", "Failed to read string from input"))?;
+
+        // Handle transforms (trim)
+        // If we trim, we must allocate a new string.
+        let val_str = if self.should_trim {
+            s_ref.trim().to_string()
+        } else {
+            // Optimization: If no trim, we usually don't need to clone just for checking.
+            // But since RodResult<Value> returns an owned Value, we will clone eventually on success.
+            s_ref.to_string()
+        };
+
+        // We check against the (possibly trimmed) string
+        let check_str = &val_str;
+
+        let mut issues = Vec::new();
+
+        // Length Checks
+        if let Some(min) = self.min {
+            if check_str.len() < min {
+                issues.push(RodIssue {
+                    details: RodIssueCode::TooSmall {
+                        minimum: min as f64,
+                        inclusive: true,
+                        type_: "string".to_string(),
+                    },
+                    message: format!("String must contain at least {} character(s)", min),
+                    path: vec![],
+                });
+            }
+        }
+        if let Some(max) = self.max {
+            if check_str.len() > max {
+                issues.push(RodIssue {
+                    details: RodIssueCode::TooBig {
+                        maximum: max as f64,
+                        inclusive: true,
+                        type_: "string".to_string(),
+                    },
+                    message: format!("String must contain at most {} character(s)", max),
+                    path: vec![],
+                });
+            }
+        }
+        if let Some(len) = self.length {
+            if check_str.len() != len {
+                issues.push(RodIssue {
+                    details: RodIssueCode::InvalidString {
+                        validation: "length".to_string(),
+                    },
+                    message: format!("String must contain exactly {} character(s)", len),
+                    path: vec![],
+                });
+            }
+        }
+
+        // Regex / Format Checks
+        if self.is_email && !EMAIL_REGEX.is_match(check_str) {
+            issues.push(RodIssue {
+                details: RodIssueCode::InvalidString {
+                    validation: "email".to_string(),
+                },
+                message: "Invalid email".to_string(),
+                path: vec![],
+            });
+        }
+        if self.is_url && !URL_REGEX.is_match(check_str) {
+            issues.push(RodIssue {
+                details: RodIssueCode::InvalidString {
+                    validation: "url".to_string(),
+                },
+                message: "Invalid url".to_string(),
+                path: vec![],
+            });
+        }
+        if self.is_uuid && !UUID_REGEX.is_match(check_str) {
+            issues.push(RodIssue {
+                details: RodIssueCode::InvalidString {
+                    validation: "uuid".to_string(),
+                },
+                message: "Invalid UUID".to_string(),
+                path: vec![],
+            });
+        }
+        if self.is_cuid && !CUID_REGEX.is_match(check_str) {
+            issues.push(RodIssue {
+                details: RodIssueCode::InvalidString {
+                    validation: "cuid".to_string(),
+                },
+                message: "Invalid CUID".to_string(),
+                path: vec![],
+            });
+        }
+        if self.is_cuid2 && !CUID2_REGEX.is_match(check_str) {
+            issues.push(RodIssue {
+                details: RodIssueCode::InvalidString {
+                    validation: "cuid2".to_string(),
+                },
+                message: "Invalid CUID2".to_string(),
+                path: vec![],
+            });
+        }
+        if self.is_ulid && !ULID_REGEX.is_match(check_str) {
+            issues.push(RodIssue {
+                details: RodIssueCode::InvalidString {
+                    validation: "ulid".to_string(),
+                },
+                message: "Invalid ULID".to_string(),
+                path: vec![],
+            });
+        }
+        if self.is_datetime && !DATETIME_REGEX.is_match(check_str) {
+            issues.push(RodIssue {
+                details: RodIssueCode::InvalidDate,
+                message: "Invalid datetime".to_string(),
+                path: vec![],
+            });
+        }
+        if self.is_ip && !(IP_V4_REGEX.is_match(check_str) || IP_V6_REGEX.is_match(check_str)) {
+            issues.push(RodIssue {
+                details: RodIssueCode::InvalidString {
+                    validation: "ip".to_string(),
+                },
+                message: "Invalid IP address".to_string(),
+                path: vec![],
+            });
+        }
+
+        // Content Checks
+        if let Some(start) = &self.starts_with {
+            if !check_str.starts_with(start) {
+                issues.push(RodIssue {
+                    details: RodIssueCode::InvalidString {
+                        validation: "starts_with".to_string(),
+                    },
+                    message: format!("Must start with \"{}\"", start),
+                    path: vec![],
+                });
+            }
+        }
+        if let Some(end) = &self.ends_with {
+            if !check_str.ends_with(end) {
+                issues.push(RodIssue {
+                    details: RodIssueCode::InvalidString {
+                        validation: "ends_with".to_string(),
+                    },
+                    message: format!("Must end with \"{}\"", end),
+                    path: vec![],
+                });
+            }
+        }
+        if let Some(inc) = &self.includes {
+            if !check_str.contains(inc) {
+                issues.push(RodIssue {
+                    details: RodIssueCode::InvalidString {
+                        validation: "includes".to_string(),
+                    },
+                    message: format!("Must include \"{}\"", inc),
+                    path: vec![],
+                });
+            }
+        }
+        if let Some(pattern) = &self.regex {
+            if let Ok(re) = Regex::new(pattern) {
+                if !re.is_match(check_str) {
+                    issues.push(RodIssue {
+                        details: RodIssueCode::InvalidString {
+                            validation: "regex".to_string(),
+                        },
+                        message: "Invalid".to_string(),
+                        path: vec![],
+                    });
+                }
+            }
+        }
+
+        if !issues.is_empty() {
+            return Err(RodError { issues });
+        }
+
+        // 3. Return Owned Value (Construct output)
+        Ok(Value::String(val_str))
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
@@ -309,7 +319,6 @@ impl RodValidator for RodString {
     }
 }
 
-// Public constructor
 pub fn string() -> RodString {
     RodString::new()
 }

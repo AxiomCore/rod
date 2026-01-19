@@ -1,12 +1,12 @@
+use crate::core::input::RodInput; // Import the trait
 use crate::error::RodResult;
 use serde_json::Value;
 use std::fmt::Debug;
 
 pub trait RodValidator: Send + Sync + Debug {
-    fn validate(&self, input: &Value) -> RodResult<Value>;
+    // CHANGE: Input is now &dyn RodInput
+    fn validate(&self, input: &dyn RodInput) -> RodResult<Value>;
 
-    /// Returns true if this validator allows the field to be missing (undefined).
-    /// Defaults to false.
     fn is_optional(&self) -> bool {
         false
     }
@@ -23,7 +23,7 @@ impl Clone for Box<dyn RodValidator> {
 }
 
 impl RodValidator for Box<dyn RodValidator> {
-    fn validate(&self, input: &Value) -> RodResult<Value> {
+    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
         (**self).validate(input)
     }
 

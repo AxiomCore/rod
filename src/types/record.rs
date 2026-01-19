@@ -1,6 +1,7 @@
-// src/types/record.rs
+use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::error::{RodError, RodResult};
+use crate::io::json; // used to create JsonInput for keys
 use serde_json::{Map, Value};
 
 #[derive(Debug, Clone)]
@@ -19,47 +20,53 @@ impl RodRecord {
 }
 
 impl RodValidator for RodRecord {
-    fn validate(&self, input: &Value) -> RodResult<Value> {
-        if let Value::Object(obj) = input {
-            let mut output = Map::new();
-            let mut issues = Vec::new();
-
-            for (key, value) in obj {
-                // Validate Key
-                // Keys in JSON are always strings, but we wrap them in Value::String
-                // to use the full power of RodValidator (e.g. regex, min length)
-                let key_val = Value::String(key.clone());
-                if let Err(mut e) = self.key_schema.validate(&key_val) {
-                    e.prepend_path(key); // Mark error location
-                    issues.extend(e.issues);
-                    continue; // Skip value validation if key is bad
-                }
-
-                // Validate Value
-                match self.value_schema.validate(value) {
-                    Ok(val) => {
-                        output.insert(key.clone(), val);
-                    }
-                    Err(mut e) => {
-                        e.prepend_path(key);
-                        issues.extend(e.issues);
-                    }
-                }
-            }
-
-            if !issues.is_empty() {
-                return Err(RodError { issues });
-            }
-
-            return Ok(Value::Object(output));
+    fn validate(&self, input: &dyn RodInput) -> RodResult<Value> {
+        if input.get_type() != DataType::Object {
+            return Err(RodError::new("invalid_type", "Expected object (record)"));
         }
 
-        Err(RodError::new("invalid_type", "Expected object (record)"))
+        let mut output = Map::new();
+        let mut issues = Vec::new();
+
+        // Iterate over keys using the trait
+        if let Some(keys) = input.keys() {
+            for key in keys {
+                // 1. Validate Key
+                // Keys are strings. To validate using RodValidator, we need to wrap the string key
+                // into a RodInput. The easiest way is using our JsonInput wrapper.
+                let key_val = Value::String(key.clone());
+                let key_input = json::wrap(&key_val);
+
+                if let Err(mut e) = self.key_schema.validate(&key_input) {
+                    e.prepend_path(&key);
+                    issues.extend(e.issues);
+                    continue;
+                }
+
+                // 2. Validate Value
+                if let Some(val_input) = input.get_key(&key) {
+                    match self.value_schema.validate(val_input.as_ref()) {
+                        Ok(val) => {
+                            output.insert(key.clone(), val);
+                        }
+                        Err(mut e) => {
+                            e.prepend_path(&key);
+                            issues.extend(e.issues);
+                        }
+                    }
+                }
+            }
+        }
+
+        if !issues.is_empty() {
+            return Err(RodError { issues });
+        }
+
+        return Ok(Value::Object(output));
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
         use crate::types::optional::OptionalExtension;
-        // Zod record keys are not partialed?
         let partial_value = self.value_schema.deep_partial_boxed();
         Box::new(RodRecord::new(self.key_schema.clone_box(), partial_value).optional())
     }

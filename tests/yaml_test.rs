@@ -1,4 +1,5 @@
 use rod::from_yaml;
+use rod::io::json::wrap;
 use serde_json::json;
 
 #[test]
@@ -27,7 +28,7 @@ properties:
         "user": { "id": 1, "email": "test@rod.rs" },
         "roles": ["admin"]
     });
-    assert!(schema.validate(&valid).is_ok());
+    assert!(schema.validate(&wrap(&valid)).is_ok());
 
     let invalid = json!({
         "user": { "id": 1, "email": "test@rod.rs" },
@@ -35,7 +36,7 @@ properties:
         "extra": "fail" // Strict mode
     });
 
-    let err = schema.validate(&invalid).unwrap_err();
+    let err = schema.validate(&wrap(&invalid)).unwrap_err();
     assert!(
         err.issues
             .iter()
@@ -61,17 +62,19 @@ properties:
 
     assert!(
         schema
-            .validate(&json!({ "status": "pending", "result": "waiting..." }))
+            .validate(&wrap(
+                &json!({ "status": "pending", "result": "waiting..." })
+            ))
             .is_ok()
     );
     assert!(
         schema
-            .validate(&json!({ "status": "done", "result": 42 }))
+            .validate(&wrap(&json!({ "status": "done", "result": 42 })))
             .is_ok()
     );
     assert!(
         schema
-            .validate(&json!({ "status": "unknown", "result": 42 }))
+            .validate(&wrap(&json!({ "status": "unknown", "result": 42 })))
             .is_err()
     );
 }
