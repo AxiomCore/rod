@@ -1,0 +1,87 @@
+---
+title: "Effects"
+description: "Using effects like preprocess, transform, and refine to add custom logic to your schemas."
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Effects are special validators that wrap other schemas to add custom logic, either before, during, or after validation.
+
+### `preprocess`
+
+The `preprocess` effect allows you to transform the input data *before* it is validated by the inner schema. This is perfect for coercion.
+
+For example, you can coerce a string from an environment variable into a number:
+
+```rust
+use rod::{preprocess, number, RodValidator};
+use rod::io::json::wrap;
+use serde_json::{Value, json};
+
+let schema = preprocess(
+    |input| {
+        if let Some(s) = input.as_str() {
+            if let Ok(n) = s.parse::<f64>() {
+                return json!(n);
+            }
+        }
+        // Fallback to original value if not a string or fails to parse
+        input.to_json()
+    },
+    number().min(0.0),
+);
+
+// This will pass, as "123" is preprocessed into the number 123.
+assert!(schema.validate(&wrap(&json!("123"))).is_ok());
+// This will fail because the string is not a valid number.
+assert!(schema.validate(&wrap(&json!("abc"))).is_err());
+```
+
+### `transform`
+
+The `transform` effect allows you to mutate the data *after* it has been successfully validated.
+
+```rust
+use rod::{transform, string, RodValidator};
+use rod::io::json::wrap;
+use serde_json::json;
+
+// This schema validates a string, then transforms it to its length.
+let schema = transform(string(), |value| {
+    // The closure receives an owned serde_json::Value
+    json!(value.as_str().unwrap().len())
+});
+
+let result = schema.validate(&wrap(&json!("hello"))).unwrap();
+assert_eq!(result.to_json(), json!(5));
+```
+
+<Callout type="warning" title="Performance Note">
+`transform` requires converting the validated `RodValue` into an owned `serde_json::Value`. This breaks the zero-copy chain and involves memory allocation. Use it when you need to change the output type or structure, but be aware of the performance cost.
+</Callout>
+
+### `refine`
+
+The `refine` effect adds a custom validation rule to a schema that runs *after* the base schema validation succeeds. Unlike `transform`, it does not change the output value.
+
+The closure receives a `&RodValue`, allowing for efficient, zero-copy custom checks.
+
+```rust
+use rod::{refine, string, RodValidator};
+use rod::io::json::wrap;
+use serde_json::json;
+
+// A schema that validates a string is a palindrome.
+let schema = refine(string(), |rod_value| {
+    let s = rod_value.as_str().unwrap();
+    let reversed: String = s.chars().rev().collect();
+    if s == reversed {
+        Ok(())
+    } else {
+        Err("String is not a palindrome".to_string())
+    }
+});
+
+assert!(schema.validate(&wrap(&json!("racecar"))).is_ok());
+assert!(schema.validate(&wrap(&json!("hello"))).is_err());
+```

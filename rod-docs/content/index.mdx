@@ -1,0 +1,33 @@
+---
+title: "Introduction"
+description: "Rust-first schema validation with static type inference and zero-copy performance"
+---
+
+# Rod
+
+**Rust-first schema validation with static type inference and zero-copy performance.**
+
+Rod is a runtime data validation and schema definition library for Rust, heavily inspired by the ergonomics and power of Zod. It allows you to build complex type-safe validators at runtime using a chainable builder API.
+
+### Features
+
+-   **Zod-like Ergonomics:** A familiar and expressive builder API.
+-   **Zero-Copy Architecture:** High-performance validation that avoids memory allocation by operating on borrowed data.
+-   **FFI-Ready:** The `RodInput` trait allows for easy integration with other languages like Python, JavaScript, and Dart.
+-   **Detailed Error Reporting:** Collects a rich list of validation issues, perfect for API responses and form validation.
+-   **Runtime Schema Definition:** Build dynamic schemas, even from sources like YAML or JSON.
+
+## Installation
+
+Add Rod to your project's dependencies:
+
+```bash
+cargo add rod
+```
+
+## Requirements
+
+Rod is built for modern Rust and leverages its powerful type system. Ensure you have a recent version of the Rust toolchain installed.
+```bash
+rustup update
+```

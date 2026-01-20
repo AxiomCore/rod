@@ -1,0 +1,105 @@
+---
+title: "Zero-Copy & FFI"
+description: "Understanding Rod's core architecture for high-performance validation and cross-language integration."
+---
+
+import { Tabs, Tab } from 'fumadocs-ui/components/tabs';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+Rod's primary advantage over other validation libraries is its **zero-copy architecture**, designed from the ground up for performance and efficient Foreign Function Interface (FFI) integration.
+
+## The `RodInput` Trait
+
+The magic behind Rod's performance is the `RodInput` trait. Instead of requiring data to be deserialized into a specific Rust struct before validation, Rod operates on a generic "input" adapter that provides a view into the source data.
+
+```rust
+pub trait RodInput<'a>: Debug + Send + Sync {
+    fn get_type(&self) -> DataType;
+    fn as_str(&self) -> Option<Cow<'a, str>>;
+    fn as_f64(&self) -> Option<f64>;
+    // ... and other accessors
+}
+```
+
+This trait decouples the validation logic from the data source. Whether the data lives in a `serde_json::Value`, a Python dictionary in the Python interpreter's memory, or a JavaScript object in the V8 heap, Rod's validators can operate on it without needing to copy it into Rust-owned memory first.
+
+### How it Works in Practice
+
+Below are examples of how `RodInput` can be implemented for different environments.
+
+<Tabs items={["Rust (Default)", "Python (Hypothetical)", "JavaScript (Hypothetical)"]}>
+  <Tab value="Rust (Default)">
+    For standard Rust applications, Rod provides a `JsonInput` adapter that works with `serde_json::Value`. It efficiently borrows data from the `Value` without cloning.
+
+    ```rust
+    use rod::io::json::{wrap, JsonInput};
+    use rod::core::input::RodInput;
+    use serde_json::Value;
+
+    // JsonInput holds a reference &'a Value
+    pub struct JsonInput<'a>(pub &'a Value);
+    
+    // It implements RodInput<'a>...
+    impl<'a> RodInput<'a> for JsonInput<'a> {
+        fn as_str(&self) -> Option<std::borrow::Cow<'a, str>> {
+            // ...by borrowing the string slice directly. No allocation!
+            self.0.as_str().map(std::borrow::Cow::Borrowed)
+        }
+        // ...
+    }
+    ```
+  </Tab>
+  <Tab value="Python (Hypothetical)">
+    When building a Python extension with `pyo3`, you can create an adapter that operates directly on Python objects in memory.
+
+    ```rust
+    // A hypothetical implementation using pyo3
+    use pyo3::prelude::*;
+    use pyo3::types::PyString;
+
+    pub struct PyInput<'a>(pub &'a PyAny);
+    
+    impl<'a> RodInput<'a> for PyInput<'a> {
+        fn as_str(&self) -> Option<std::borrow::Cow<'a, str>> {
+            // `to_str()` borrows the underlying string data from Python's memory.
+            // This is a true zero-copy read.
+            if let Ok(py_string) = self.0.downcast::<PyString>() {
+                if let Ok(s) = py_string.to_str() {
+                    return Some(std::borrow::Cow::Borrowed(s));
+                }
+            }
+            None
+        }
+        // ...
+    }
+    ```
+  </Tab>
+  <Tab value="JavaScript (Hypothetical)">
+    Similarly, for a Node.js addon with `napi-rs`, an adapter can be created to view JavaScript values.
+
+    ```rust
+    // A hypothetical implementation using napi-rs
+    use napi::{JsString, JsUnknown};
+    use napi::bindgen_prelude::ToNapiValue;
+
+    pub struct JsInput<'a>(pub &'a JsUnknown);
+    
+    impl<'a> RodInput<'a> for JsInput<'a> {
+        fn as_str(&self) -> Option<std::borrow::Cow<'a, str>> {
+            // JS strings are often UTF-16, so a conversion (allocation) may be needed.
+            // However, structural traversal (getting keys from an object) remains zero-copy,
+            // which is still a massive performance win.
+            if let Ok(js_string) = JsString::from_unknown(self.0.clone()) {
+                if let Ok(s) = js_string.into_utf8() {
+                    return Some(std::borrow::Cow::Owned(s.into_owned().unwrap()));
+                }
+            }
+            None
+        }
+        // ...
+    }
+    ```
+  </Tab>
+</Tabs>
+
+By using this architecture, Rod achieves unparalleled performance in cross-language scenarios, making it the ideal choice for building high-speed validation layers in native extensions.

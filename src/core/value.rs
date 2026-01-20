@@ -14,6 +14,42 @@ pub enum RodValue<'a> {
 }
 
 impl<'a> RodValue<'a> {
+    // --- Phase 1: Accessors ---
+
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            RodValue::String(s) => Some(s.as_ref()),
+            RodValue::Json(Value::String(s)) => Some(s.as_str()),
+            _ => None,
+        }
+    }
+
+    pub fn as_f64(&self) -> Option<f64> {
+        match self {
+            RodValue::Number(n) => Some(*n),
+            RodValue::Json(Value::Number(n)) => n.as_f64(),
+            _ => None,
+        }
+    }
+
+    pub fn as_bool(&self) -> Option<bool> {
+        match self {
+            RodValue::Boolean(b) => Some(*b),
+            RodValue::Json(Value::Bool(b)) => Some(*b),
+            _ => None,
+        }
+    }
+
+    pub fn is_null(&self) -> bool {
+        match self {
+            RodValue::Null => true,
+            RodValue::Json(Value::Null) => true,
+            _ => false,
+        }
+    }
+
+    // --- End Phase 1 ---
+
     pub fn to_json(&self) -> Value {
         match self {
             RodValue::String(s) => Value::String(s.to_string()),
@@ -78,14 +114,8 @@ impl<'a> RodInput<'a> for RodValueInput<'a> {
 
     fn as_str(&self) -> Option<Cow<'a, str>> {
         match self.0 {
-            RodValue::String(s) => Some(s.clone()), // Cow is cheap to clone
-            RodValue::Json(Value::String(s)) => {
-                // Warning: We can't return Cow<'a> pointing to inside Json(Value) easily
-                // if the Value isn't exposed as 'a.
-                // But RodValueInput holds &'a RodValue<'a>.
-                // So self.0 is valid for 'a.
-                Some(Cow::Borrowed(s.as_str()))
-            }
+            RodValue::String(s) => Some(s.clone()),
+            RodValue::Json(Value::String(s)) => Some(Cow::Borrowed(s.as_str())),
             _ => None,
         }
     }
@@ -175,7 +205,6 @@ impl<'a> RodInput<'a> for RodValueInput<'a> {
                 .get(index)
                 .map(|v| Box::new(RodValueInput(v)) as Box<dyn RodInput<'a>>),
             RodValue::Json(Value::Array(arr)) => arr.get(index).map(|v| {
-                // Re-use InnerJson definition (copy-paste for brevity or move to helper)
                 #[derive(Debug)]
                 struct InnerJson<'b>(&'b Value);
                 impl<'b> RodInput<'b> for InnerJson<'b> {
