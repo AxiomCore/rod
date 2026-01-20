@@ -1,0 +1,15 @@
+{
+    "root": true,
+    "pages": [
+        "---Getting Started---",
+        "index",
+        "basics",
+        "---API Reference---",
+        "api",
+        "---Advanced Guides---",
+        "error-handling",
+        "effects",
+        "schema-from-yaml",
+        "zero-copy-ffi"
+    ]
+}

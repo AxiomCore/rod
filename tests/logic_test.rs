@@ -44,11 +44,10 @@ fn test_intersection() {
     let schema = intersection(schema_a, schema_b);
 
     let valid = json!({ "name": "Rod", "age": 1 });
-    let input = wrap(&valid);
-    let result = schema.validate(&input);
+    let result = schema.validate(&wrap(&valid));
     assert!(result.is_ok());
 
-    let output = result.unwrap().to_json();
+    let output = result.unwrap().to_json(); // Convert to JSON for assertion
     assert_eq!(output.get("name").unwrap(), "Rod");
     assert_eq!(output.get("age").unwrap(), 1.0);
 }
@@ -56,7 +55,9 @@ fn test_intersection() {
 #[test]
 fn test_refine_transform() {
     let schema = transform(
+        // The closure now gets a &RodValue
         refine(string(), |v| {
+            // Use the new accessor method to check the string
             let s = v.as_str().unwrap();
             let rev: String = s.chars().rev().collect();
             if s == rev {
@@ -65,6 +66,7 @@ fn test_refine_transform() {
                 Err("Not a palindrome".into())
             }
         }),
+        // Transform still gets an owned Value, this part doesn't change
         |v| json!(v.as_str().unwrap().to_uppercase()),
     );
     let valid = json!("racecar");
@@ -84,7 +86,7 @@ fn test_lazy() {
 
 #[test]
 fn test_discriminated_union() {
-    use rod::{discriminated_union, literal, number, rod_obj}; // Assuming discriminated_union is exported
+    use rod::{discriminated_union, literal, number, rod_obj};
 
     let circle = rod_obj! { kind: literal("circle"), radius: number() };
     let square = rod_obj! { kind: literal("square"), side: number() };

@@ -10,7 +10,7 @@ use std::fmt;
 #[derive(Clone)]
 pub struct RodRefine<F>
 where
-    F: Fn(&Value) -> Result<(), String> + Send + Sync + Clone,
+    F: for<'v> Fn(&RodValue<'v>) -> Result<(), String> + Send + Sync + Clone,
 {
     schema: Box<dyn RodValidator>,
     check: F,
@@ -18,7 +18,7 @@ where
 
 impl<F> fmt::Debug for RodRefine<F>
 where
-    F: Fn(&Value) -> Result<(), String> + Send + Sync + Clone,
+    F: for<'v> Fn(&RodValue<'v>) -> Result<(), String> + Send + Sync + Clone,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RodRefine")
@@ -30,7 +30,7 @@ where
 
 impl<F> RodRefine<F>
 where
-    F: Fn(&Value) -> Result<(), String> + Send + Sync + Clone,
+    F: for<'v> Fn(&RodValue<'v>) -> Result<(), String> + Send + Sync + Clone,
 {
     pub fn new(schema: Box<dyn RodValidator>, check: F) -> Self {
         Self { schema, check }
@@ -39,13 +39,15 @@ where
 
 impl<F> RodValidator for RodRefine<F>
 where
-    F: Fn(&Value) -> Result<(), String> + Send + Sync + Clone + 'static,
+    F: for<'v> Fn(&RodValue<'v>) -> Result<(), String> + Send + Sync + Clone + 'static,
 {
     fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         // 1. Validate Inner
         let val = self.schema.validate(input)?;
-        // 2. Check on Value (convert to owned JSON for check)
-        if let Err(msg) = (self.check)(&val.to_json()) {
+
+        // 2. Check on RodValue (Zero Copy)
+        // We pass the reference directly. No allocation.
+        if let Err(msg) = (self.check)(&val) {
             return Err(RodError::new("custom_error", &msg));
         }
         Ok(val)
@@ -102,6 +104,8 @@ where
 {
     fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         let val = self.schema.validate(input)?;
+        // Transform still typically requires Owned JSON because user functions usually
+        // operate on specific types. We can optimize this later if needed.
         let json_val = val.to_json();
         Ok(RodValue::Json((self.transformer)(json_val)))
     }
@@ -121,7 +125,7 @@ where
 pub fn refine<V, F>(validator: V, check: F) -> RodRefine<F>
 where
     V: RodValidator + 'static,
-    F: Fn(&Value) -> Result<(), String> + Send + Sync + Clone + 'static,
+    F: for<'v> Fn(&RodValue<'v>) -> Result<(), String> + Send + Sync + Clone + 'static,
 {
     RodRefine::new(Box::new(validator), check)
 }

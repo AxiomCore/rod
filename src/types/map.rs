@@ -35,6 +35,7 @@ impl RodValidator for RodMap {
         for i in 0..len {
             if let Some(entry_input) = input.get_index(i) {
                 // entry_input must be an array of length 2
+                // We access via reference &*entry_input
                 if entry_input.get_type() == DataType::Array {
                     if entry_input.count() != Some(2) {
                         issues.push(crate::error::RodIssue {
@@ -51,14 +52,12 @@ impl RodValidator for RodMap {
                     let key_input = entry_input.get_index(0).unwrap();
                     let val_input = entry_input.get_index(1).unwrap();
 
-                    // Validate Key
+                    // Validate Key & Value
                     let k_res = self.key_type.validate(key_input.as_ref());
-                    // Validate Value
                     let v_res = self.value_type.validate(val_input.as_ref());
 
                     match (k_res, v_res) {
-                        (Ok(k), Ok(v)) => valid_entries
-                            .push(RodValue::Array(vec![k.into_owned(), v.into_owned()])),
+                        (Ok(k), Ok(v)) => valid_entries.push(RodValue::Array(vec![k, v])), // Removed .into_owned()
                         (Err(mut e), _) => {
                             e.prepend_path(&format!("{}.key", i));
                             issues.extend(e.issues);

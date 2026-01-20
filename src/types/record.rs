@@ -3,6 +3,7 @@ use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
 use crate::error::{RodError, RodResult};
 use crate::io::json; // used to create JsonInput for keys
+use std::borrow::Cow;
 
 #[derive(Debug, Clone)]
 pub struct RodRecord {
@@ -32,8 +33,9 @@ impl RodValidator for RodRecord {
         if let Some(keys) = input.keys() {
             for key in keys {
                 // 1. Validate Key
-                // Keys are strings. To validate using RodValidator, we need to wrap the string key
-                // into a RodInput. The easiest way is using our JsonInput wrapper.
+                // Keys are strings.
+                // Note: We allocate a new Value::String(key) here because 'keys()' returns Strings.
+                // In a perfect zero-copy world, keys() would return iter<&str>, but that's hard to generalize.
                 let key_val = serde_json::Value::String(key.clone());
                 let key_input = json::wrap(&key_val);
 
@@ -47,7 +49,9 @@ impl RodValidator for RodRecord {
                 if let Some(val_input) = input.get_key(&key) {
                     match self.value_schema.validate(val_input.as_ref()) {
                         Ok(val) => {
-                            output.push((std::borrow::Cow::Owned(key.clone()), val.into_owned()));
+                            // Removed .into_owned() on val.
+                            // Keys are owned strings from the iterator, so we use Cow::Owned.
+                            output.push((Cow::Owned(key.clone()), val));
                         }
                         Err(mut e) => {
                             e.prepend_path(&key);
