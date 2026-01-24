@@ -1,7 +1,7 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
-use crate::error::{RodError, RodResult};
+use crate::error::{RodIssueCode, ValidationContext};
 
 #[derive(Debug, Clone)]
 pub struct RodEnum {
@@ -15,7 +15,11 @@ impl RodEnum {
 }
 
 impl RodValidator for RodEnum {
-    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
+    fn validate_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
         if input.get_type() == DataType::String {
             if let Some(s) = input.as_str() {
                 if self.values.iter().any(|v| v == s.as_ref()) {
@@ -24,10 +28,14 @@ impl RodValidator for RodEnum {
             }
         }
 
-        Err(RodError::new(
-            "invalid_enum_value",
-            &format!("Invalid enum value. Expected one of: {:?}", self.values),
-        ))
+        ctx.add_issue(
+            RodIssueCode::InvalidEnumValue {
+                expected: self.values.clone(),
+                received: "".into(),
+            },
+            format!("Invalid enum value. Expected one of: {:?}", self.values),
+        );
+        Err(())
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

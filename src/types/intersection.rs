@@ -1,7 +1,7 @@
 use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
-use crate::error::RodResult;
+use crate::error::ValidationContext;
 
 #[derive(Debug, Clone)]
 pub struct RodIntersection {
@@ -16,22 +16,34 @@ impl RodIntersection {
 }
 
 impl RodValidator for RodIntersection {
-    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
+    fn validate_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
         // Validate against both
-        let v1 = self.left.validate(input)?;
-        let v2 = self.right.validate(input)?;
+        let v1 = self.left.validate_with_context(ctx, input);
 
-        // Merging logic for objects
-        match (v1, v2) {
+        // If left failed and strict abort is on, exit early
+        if v1.is_err() && ctx.should_abort() {
+            return Err(());
+        }
+
+        let v2 = self.right.validate_with_context(ctx, input);
+
+        if v1.is_err() || v2.is_err() {
+            return Err(());
+        }
+
+        // Merging logic
+        match (v1.unwrap(), v2.unwrap()) {
             (RodValue::Object(mut o1), RodValue::Object(o2)) => {
                 // Merge o2 into o1
                 o1.extend(o2);
                 Ok(RodValue::Object(o1))
             }
-            (_, v2) => {
-                // For primitives, they must match (effectively refining the type)
-                Ok(v2)
-            }
+            // For primitives, they must match (effectively refining the type), return the second (refined)
+            (_, v2) => Ok(v2),
         }
     }
 

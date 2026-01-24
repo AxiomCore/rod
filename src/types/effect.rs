@@ -1,8 +1,7 @@
 use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
-use crate::error::{RodError, RodResult};
-use serde_json::Value;
+use crate::error::{RodIssueCode, ValidationContext};
 use std::fmt;
 
 // --- Refine ---
@@ -41,20 +40,29 @@ impl<F> RodValidator for RodRefine<F>
 where
     F: for<'v> Fn(&RodValue<'v>) -> Result<(), String> + Send + Sync + Clone + 'static,
 {
-    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
-        // 1. Validate Inner
-        let val = self.schema.validate(input)?;
+    fn validate_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
+        // Validate Inner
+        let val = self.schema.validate_with_context(ctx, input)?;
 
-        // 2. Check on RodValue (Zero Copy)
-        // We pass the reference directly. No allocation.
+        // Check on RodValue (Zero Copy)
         if let Err(msg) = (self.check)(&val) {
-            return Err(RodError::new("custom_error", &msg));
+            ctx.add_issue(
+                RodIssueCode::Custom {
+                    message: msg.clone(),
+                    params: None,
+                },
+                msg,
+            );
+            return Err(());
         }
         Ok(val)
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
-        // Zod says "Zod effects are NOT preserving refinements on deepPartial".
         self.schema.deep_partial_boxed()
     }
 
@@ -68,7 +76,8 @@ where
 #[derive(Clone)]
 pub struct RodTransform<F>
 where
-    F: Fn(Value) -> Value + Send + Sync + Clone,
+    // CHANGED: Transformer now receives RodValue to allow lazy/zero-copy transformations
+    F: Fn(RodValue) -> RodValue + Send + Sync + Clone,
 {
     schema: Box<dyn RodValidator>,
     transformer: F,
@@ -76,7 +85,7 @@ where
 
 impl<F> fmt::Debug for RodTransform<F>
 where
-    F: Fn(Value) -> Value + Send + Sync + Clone,
+    F: Fn(RodValue) -> RodValue + Send + Sync + Clone,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RodTransform")
@@ -88,7 +97,7 @@ where
 
 impl<F> RodTransform<F>
 where
-    F: Fn(Value) -> Value + Send + Sync + Clone,
+    F: Fn(RodValue) -> RodValue + Send + Sync + Clone,
 {
     pub fn new(schema: Box<dyn RodValidator>, transformer: F) -> Self {
         Self {
@@ -100,18 +109,21 @@ where
 
 impl<F> RodValidator for RodTransform<F>
 where
-    F: Fn(Value) -> Value + Send + Sync + Clone + 'static,
+    F: Fn(RodValue) -> RodValue + Send + Sync + Clone + 'static,
 {
-    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
-        let val = self.schema.validate(input)?;
-        // Transform still typically requires Owned JSON because user functions usually
-        // operate on specific types. We can optimize this later if needed.
-        let json_val = val.to_json();
-        Ok(RodValue::Json((self.transformer)(json_val)))
+    fn validate_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
+        let val = self.schema.validate_with_context(ctx, input)?;
+
+        // Transform value.
+        // We assume transformer returns a value valid for 'a or 'static.
+        Ok((self.transformer)(val))
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
-        // Transforms lost on deep partial
         self.schema.deep_partial_boxed()
     }
 
@@ -133,7 +145,7 @@ where
 pub fn transform<V, F>(validator: V, transformer: F) -> RodTransform<F>
 where
     V: RodValidator + 'static,
-    F: Fn(Value) -> Value + Send + Sync + Clone + 'static,
+    F: Fn(RodValue) -> RodValue + Send + Sync + Clone + 'static,
 {
     RodTransform::new(Box::new(validator), transformer)
 }

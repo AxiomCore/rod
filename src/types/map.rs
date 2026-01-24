@@ -1,7 +1,7 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
-use crate::error::{RodError, RodResult};
+use crate::error::{RodIssueCode, ValidationContext};
 
 #[derive(Debug, Clone)]
 pub struct RodMap {
@@ -19,71 +19,101 @@ impl RodMap {
 }
 
 impl RodValidator for RodMap {
-    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
-        // Expecting Array of [Key, Value] tuples
+    fn validate_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
         if input.get_type() != DataType::Array {
-            return Err(RodError::new(
-                "invalid_type",
-                "Expected array of entries for Map",
-            ));
+            ctx.add_issue(
+                RodIssueCode::InvalidType {
+                    expected: "array (entries)".into(),
+                    received: "unknown".into(),
+                },
+                "Expected array of entries for Map".into(),
+            );
+            return Err(());
         }
 
-        let mut valid_entries = Vec::new();
-        let mut issues = Vec::new();
         let len = input.count().unwrap_or(0);
+        let mut valid_entries = Vec::with_capacity(len);
 
         for i in 0..len {
-            if let Some(entry_input) = input.get_index(i) {
-                // entry_input must be an array of length 2
-                // We access via reference &*entry_input
-                if entry_input.get_type() == DataType::Array {
+            // Path segment for array index
+            // We use with_index which uses zero-alloc enum path segment
+            let entry_result = ctx.with_index(i, |sub_ctx| {
+                input.with_index(i, &mut |entry_input| {
+                    if entry_input.get_type() != DataType::Array {
+                        sub_ctx.add_issue(
+                            RodIssueCode::InvalidType {
+                                expected: "array".into(),
+                                received: "unknown".into(),
+                            },
+                            "Map entries must be arrays".into(),
+                        );
+                        return Err(());
+                    }
                     if entry_input.count() != Some(2) {
-                        issues.push(crate::error::RodIssue {
-                            details: crate::error::RodIssueCode::Custom {
-                                message: "Map entry must be a [key, value] tuple".to_string(),
+                        sub_ctx.add_issue(
+                            RodIssueCode::Custom {
+                                message: "Map entry must be a [key, value] tuple".into(),
                                 params: None,
                             },
-                            message: "Map entry must be a [key, value] tuple".to_string(),
-                            path: vec![i.to_string()],
-                        });
-                        continue;
+                            "Map entry must be a [key, value] tuple".into(),
+                        );
+                        return Err(());
                     }
 
-                    let key_input = entry_input.get_index(0).unwrap();
-                    let val_input = entry_input.get_index(1).unwrap();
-
-                    // Validate Key & Value
-                    let k_res = self.key_type.validate(key_input.as_ref());
-                    let v_res = self.value_type.validate(val_input.as_ref());
-
-                    match (k_res, v_res) {
-                        (Ok(k), Ok(v)) => valid_entries.push(RodValue::Array(vec![k, v])), // Removed .into_owned()
-                        (Err(mut e), _) => {
-                            e.prepend_path(&format!("{}.key", i));
-                            issues.extend(e.issues);
-                        }
-                        (_, Err(mut e)) => {
-                            e.prepend_path(&format!("{}.value", i));
-                            issues.extend(e.issues);
-                        }
-                    }
-                } else {
-                    issues.push(crate::error::RodIssue {
-                        details: crate::error::RodIssueCode::InvalidType {
-                            expected: "array".to_string(),
-                            received: "unknown".to_string(),
-                        },
-                        message: "Map entries must be arrays".to_string(),
-                        path: vec![i.to_string()],
+                    // Validate Key (Index 0)
+                    let key_res = sub_ctx.with_path("key", |k_ctx| {
+                        entry_input.with_index(0, &mut |k_in| {
+                            self.key_type.validate_with_context(k_ctx, k_in)
+                        })
                     });
+
+                    if key_res.is_none() || key_res.as_ref().unwrap().is_err() {
+                        return Err(());
+                    }
+
+                    // Validate Value (Index 1)
+                    let val_res = sub_ctx.with_path("value", |v_ctx| {
+                        entry_input.with_index(1, &mut |v_in| {
+                            self.value_type.validate_with_context(v_ctx, v_in)
+                        })
+                    });
+
+                    if val_res.is_none() || val_res.as_ref().unwrap().is_err() {
+                        return Err(());
+                    }
+
+                    // Extract values
+                    // Safe unwrap because we checked errors
+                    let k = key_res.unwrap().unwrap();
+                    let v = val_res.unwrap().unwrap();
+
+                    // FIX: Return RodValue to satisfy with_index signature
+                    Ok(RodValue::Array(vec![k, v]))
+                })
+            });
+
+            // Flatten Option<Option<Result>>
+            if let Some(Ok(RodValue::Array(mut items))) = entry_result {
+                // Unpack the vec to push to valid_entries
+                if items.len() == 2 {
+                    let v = items.pop().unwrap();
+                    let k = items.pop().unwrap();
+                    valid_entries.push(RodValue::Array(vec![k, v]));
                 }
+            } else if ctx.should_abort() {
+                return Err(());
             }
         }
 
-        if !issues.is_empty() {
-            return Err(RodError { issues });
+        if ctx.has_issues() {
+            return Err(());
         }
-        return Ok(RodValue::Array(valid_entries));
+
+        Ok(RodValue::Array(valid_entries))
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

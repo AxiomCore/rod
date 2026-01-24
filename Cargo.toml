@@ -11,3 +11,6 @@ thiserror = "1.0"
 regex = "1.10"
 lazy_static = "1.4"
 chrono = { version = "0.4", features = ["serde"] }
+wasm-bindgen = "0.2"
+serde-wasm-bindgen = "0.6"
+js-sys = "0.3"

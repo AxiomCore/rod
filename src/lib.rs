@@ -1,4 +1,3 @@
-// src/lib.rs
 pub mod core;
 pub mod error;
 pub mod io;
@@ -8,7 +7,7 @@ pub mod types;
 
 use serde_json::Value;
 
-// Export types
+// Export types factories
 pub use types::array::array;
 pub use types::boolean::boolean;
 pub use types::date::date;
@@ -31,9 +30,11 @@ pub use types::string::string;
 pub use types::tuple::tuple;
 pub use types::union::union;
 
-// Export IO
+// Export IO & Core Traits
+pub use core::async_validator::{AsyncRodValidator, BoxFuture};
 pub use core::input::RodInput;
 pub use core::validator::RodValidator;
+pub use core::value::RodValue;
 pub use schema::parser::from_yaml;
 
 // Coercion Helpers (z.coerce)
@@ -45,13 +46,11 @@ pub mod coerce {
     pub fn string() -> impl RodValidator {
         preprocess(
             |v: &dyn RodInput| {
-                // Check type using trait methods
-                // Preprocess must return an OWNED Value, which is then wrapped by RodPreprocess logic
                 match v.get_type() {
                     DataType::String => Value::String(v.as_str().unwrap().to_string()),
                     DataType::Number => Value::String(v.as_f64().unwrap().to_string()),
                     DataType::Boolean => Value::String(v.as_bool().unwrap().to_string()),
-                    // Fallback: convert whatever input we have to JSON value to pass through
+                    // Fallback to JSON clone if not simple primitive
                     _ => v.to_json(),
                 }
             },
@@ -61,40 +60,52 @@ pub mod coerce {
 
     pub fn number() -> impl RodValidator {
         preprocess(
-            |v: &dyn RodInput| {
-                match v.get_type() {
-                    DataType::Number => {
-                        // as_f64 is safe because we checked type
-                        let f = v.as_f64().unwrap();
-                        if let Some(n) = serde_json::Number::from_f64(f) {
-                            Value::Number(n)
-                        } else {
-                            // NaN/Inf logic? Zod coerce returns NaN for strings, but JSON doesn't support it.
-                            // Fallback to null or original
-                            Value::Null
-                        }
+            |v: &dyn RodInput| match v.get_type() {
+                DataType::Number => {
+                    let f = v.as_f64().unwrap();
+                    if let Some(n) = serde_json::Number::from_f64(f) {
+                        Value::Number(n)
+                    } else {
+                        Value::Null
                     }
-                    DataType::String => {
-                        let s = v.as_str().unwrap();
-                        if let Ok(i) = s.parse::<i64>() {
-                            return json!(i);
-                        }
-                        if let Ok(f) = s.parse::<f64>() {
-                            if let Some(n) = serde_json::Number::from_f64(f) {
-                                return Value::Number(n);
-                            }
-                        }
-                        // Failed to parse, pass original string to let validator fail
-                        Value::String(s.to_string())
-                    }
-                    _ => v.to_json(),
                 }
+                DataType::String => {
+                    let s = v.as_str().unwrap();
+                    if let Ok(i) = s.parse::<i64>() {
+                        return json!(i);
+                    }
+                    if let Ok(f) = s.parse::<f64>() {
+                        if let Some(n) = serde_json::Number::from_f64(f) {
+                            return Value::Number(n);
+                        }
+                    }
+                    Value::String(s.to_string())
+                }
+                _ => v.to_json(),
             },
             crate::types::number::number(),
         )
     }
+
+    pub fn boolean() -> impl RodValidator {
+        preprocess(
+            |v: &dyn RodInput| match v.get_type() {
+                DataType::String => {
+                    let s = v.as_str().unwrap();
+                    Value::Bool(s == "true")
+                }
+                DataType::Number => {
+                    let f = v.as_f64().unwrap();
+                    Value::Bool(f != 0.0)
+                }
+                _ => v.to_json(),
+            },
+            crate::types::boolean::boolean(),
+        )
+    }
 }
 
+// Helper for type name inspection (useful for error messages)
 pub fn get_type_name(v: &Value) -> String {
     match v {
         Value::Null => "null",
@@ -105,4 +116,12 @@ pub fn get_type_name(v: &Value) -> String {
         Value::Object(_) => "object",
     }
     .to_string()
+}
+
+// Deserialization helper
+use serde::de::DeserializeOwned;
+impl<'a> crate::core::value::RodValue<'a> {
+    pub fn parse_into<T: DeserializeOwned>(self) -> Result<T, serde_json::Error> {
+        T::deserialize(self)
+    }
 }

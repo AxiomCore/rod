@@ -1,8 +1,9 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
-use crate::error::{RodError, RodResult};
+use crate::error::{RodIssueCode, ValidationContext};
 use crate::types::enum_type::{RodEnum, enum_type};
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -64,32 +65,44 @@ impl RodObject {
 }
 
 impl RodValidator for RodObject {
-    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
+    fn validate_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
         if input.get_type() == DataType::Object {
             let mut output = Vec::new();
-            let mut issues = Vec::new();
 
             // 1. Validate Shape
             for (key, validator) in &self.shape {
-                match input.get_key(key) {
-                    Some(val_input) => match validator.validate(val_input.as_ref()) {
-                        Ok(v) => {
-                            output.push((std::borrow::Cow::Owned(key.clone()), v));
+                // FIX: Use with_owned_path (clone key) to avoid lifetime issues
+                // between self (schema) and ctx (ephemeral).
+                let result_op = ctx.with_owned_path(key.clone(), |sub_ctx| {
+                    input.with_key(key, &mut |child_input| {
+                        validator.validate_with_context(sub_ctx, child_input)
+                    })
+                });
+
+                match result_op {
+                    Some(Ok(v)) => {
+                        output.push((Cow::Owned(key.clone()), v));
+                    }
+                    Some(Err(_)) => {
+                        if ctx.should_abort() {
+                            return Err(());
                         }
-                        Err(mut e) => {
-                            e.prepend_path(key);
-                            issues.extend(e.issues);
-                        }
-                    },
+                    }
                     None => {
                         if !validator.is_optional() {
-                            issues.push(crate::error::RodIssue {
-                                details: crate::error::RodIssueCode::InvalidType {
-                                    expected: "any".to_string(),
-                                    received: "undefined".to_string(),
-                                },
-                                message: "Required".to_string(),
-                                path: vec![key.clone()],
+                            // FIX: Use with_owned_path for error reporting too
+                            ctx.with_owned_path(key.clone(), |sub_ctx| {
+                                sub_ctx.add_issue(
+                                    RodIssueCode::InvalidType {
+                                        expected: "any".into(),
+                                        received: "undefined".into(),
+                                    },
+                                    "Required".into(),
+                                );
                             });
                         }
                     }
@@ -99,24 +112,25 @@ impl RodValidator for RodObject {
             // 2. Handle Unknown Keys
             if let Some(keys_iter) = input.keys() {
                 for key in keys_iter {
-                    if !self.shape.contains_key(&key) {
+                    if !self.shape.contains_key(key.as_ref()) {
                         match self.unknown_keys {
                             UnknownKeys::Strict => {
-                                issues.push(crate::error::RodIssue {
-                                    details: crate::error::RodIssueCode::UnrecognizedKeys {
-                                        keys: vec![key.clone()],
-                                    },
-                                    message: format!("Unrecognized key: '{}'", key),
-                                    path: vec![key.clone()],
+                                ctx.with_owned_path(key.to_string(), |sub_ctx| {
+                                    sub_ctx.add_issue(
+                                        RodIssueCode::UnrecognizedKeys {
+                                            keys: vec![key.to_string()],
+                                        },
+                                        format!("Unrecognized key: '{}'", key),
+                                    );
                                 });
                             }
                             UnknownKeys::Passthrough => {
-                                if let Some(val_input) = input.get_key(&key) {
-                                    // Slow path for Passthrough: convert to Owned JSON
-                                    output.push((
-                                        std::borrow::Cow::Owned(key),
-                                        RodValue::Json(val_input.to_json()),
-                                    ));
+                                let val_lazy = input.with_key(key.as_ref(), &mut |field_input| {
+                                    Ok(RodValue::Lazy(field_input.clone_box()))
+                                });
+
+                                if let Some(Ok(v)) = val_lazy {
+                                    output.push((key, v));
                                 }
                             }
                             UnknownKeys::Strip => {}
@@ -125,14 +139,21 @@ impl RodValidator for RodObject {
                 }
             }
 
-            if !issues.is_empty() {
-                return Err(RodError { issues });
+            if ctx.has_issues() {
+                return Err(());
             }
 
             return Ok(RodValue::Object(output));
         }
 
-        Err(RodError::new("invalid_type", "Expected object"))
+        ctx.add_issue(
+            RodIssueCode::InvalidType {
+                expected: "object".into(),
+                received: "unknown".into(),
+            },
+            "Expected object".into(),
+        );
+        Err(())
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
