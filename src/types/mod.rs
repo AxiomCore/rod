@@ -1,4 +1,3 @@
-// src/types/mod.rs
 pub mod array;
 pub mod boolean;
 pub mod date;

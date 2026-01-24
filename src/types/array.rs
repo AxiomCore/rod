@@ -1,7 +1,7 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
-use crate::error::{RodError, RodResult};
+use crate::error::{RodIssueCode, ValidationContext};
 
 #[derive(Debug, Clone)]
 pub struct RodArray {
@@ -33,65 +33,71 @@ impl RodArray {
 }
 
 impl RodValidator for RodArray {
-    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
+    fn validate_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
         if input.get_type() == DataType::Array {
-            let mut issues = Vec::new();
             let len = input.count().unwrap_or(0);
 
             // 1. Validate Length
             if let Some(min) = self.min {
                 if len < min {
-                    issues.push(crate::error::RodIssue {
-                        details: crate::error::RodIssueCode::TooSmall {
+                    ctx.add_issue(
+                        RodIssueCode::TooSmall {
                             minimum: min as f64,
                             inclusive: true,
-                            type_: "array".to_string(),
+                            type_: "array".into(),
                         },
-                        message: format!("Array must contain at least {} element(s)", min),
-                        path: vec![],
-                    });
+                        format!("Array must contain at least {} element(s)", min),
+                    );
                 }
             }
             if let Some(max) = self.max {
                 if len > max {
-                    issues.push(crate::error::RodIssue {
-                        details: crate::error::RodIssueCode::TooBig {
+                    ctx.add_issue(
+                        RodIssueCode::TooBig {
                             maximum: max as f64,
                             inclusive: true,
-                            type_: "array".to_string(),
+                            type_: "array".into(),
                         },
-                        message: format!("Array must contain at most {} element(s)", max),
-                        path: vec![],
-                    });
+                        format!("Array must contain at most {} element(s)", max),
+                    );
                 }
             }
 
-            // 2. Validate Items
+            // 2. Validate Items using with_index visitor (Zero Copy)
             let mut valid_items = Vec::with_capacity(len);
             for i in 0..len {
-                if let Some(item_input) = input.get_index(i) {
-                    // item_input is Box<dyn RodInput<'a> + '_>.
-                    // We borrow it (&*item_input) to get &dyn RodInput<'a>.
-                    // Since the returned RodValue is tied to 'a (data source),
-                    // NOT the temporary reference, this is valid.
-                    match self.schema.validate(&*item_input) {
-                        Ok(val) => valid_items.push(val),
-                        Err(mut e) => {
-                            e.prepend_path(&i.to_string());
-                            issues.extend(e.issues);
-                        }
-                    }
+                let item_res = ctx.with_index(i, |sub_ctx| {
+                    input.with_index(i, &mut |item_input| {
+                        self.schema.validate_with_context(sub_ctx, item_input)
+                    })
+                });
+
+                if let Some(Ok(val)) = item_res {
+                    valid_items.push(val);
+                } else if ctx.should_abort() {
+                    return Err(());
                 }
             }
 
-            if !issues.is_empty() {
-                return Err(RodError { issues });
+            if ctx.has_issues() {
+                return Err(());
             }
 
             return Ok(RodValue::Array(valid_items));
         }
 
-        Err(RodError::new("invalid_type", "Expected array"))
+        ctx.add_issue(
+            RodIssueCode::InvalidType {
+                expected: "array".into(),
+                received: "unknown".into(),
+            },
+            "Expected array".into(),
+        );
+        Err(())
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

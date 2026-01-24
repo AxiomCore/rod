@@ -1,7 +1,7 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
-use crate::error::{RodError, RodResult};
+use crate::error::{RodIssueCode, ValidationContext};
 
 #[derive(Debug, Clone)]
 pub struct RodTuple {
@@ -15,39 +15,55 @@ impl RodTuple {
 }
 
 impl RodValidator for RodTuple {
-    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
+    fn validate_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
         if input.get_type() != DataType::Array {
-            return Err(RodError::new("invalid_type", "Expected tuple (array)"));
+            ctx.add_issue(
+                RodIssueCode::InvalidType {
+                    expected: "tuple".into(),
+                    received: "unknown".into(),
+                },
+                "Expected tuple (array)".into(),
+            );
+            return Err(());
         }
 
         let len = input.count().unwrap_or(0);
         if len != self.items.len() {
-            return Err(RodError::new(
-                "invalid_tuple_size",
-                &format!("Tuple must contain exactly {} elements", self.items.len()),
-            ));
+            ctx.add_issue(
+                RodIssueCode::Custom {
+                    message: "Invalid tuple size".into(),
+                    params: None,
+                },
+                format!("Tuple must contain exactly {} elements", self.items.len()),
+            );
+            return Err(());
         }
 
-        let mut valid_items = Vec::new();
-        let mut issues = Vec::new();
+        let mut valid_items = Vec::with_capacity(len);
 
         for (i, validator) in self.items.iter().enumerate() {
-            if let Some(item_input) = input.get_index(i) {
-                match validator.validate(item_input.as_ref()) {
-                    Ok(val) => valid_items.push(val.into_owned()),
-                    Err(mut e) => {
-                        e.prepend_path(&i.to_string());
-                        issues.extend(e.issues);
-                    }
-                }
+            let item_res = ctx.with_index(i, |sub_ctx| {
+                input.with_index(i, &mut |item_input| {
+                    validator.validate_with_context(sub_ctx, item_input)
+                })
+            });
+
+            if let Some(Ok(val)) = item_res {
+                valid_items.push(val);
+            } else if ctx.should_abort() {
+                return Err(());
             }
         }
 
-        if !issues.is_empty() {
-            return Err(RodError { issues });
+        if ctx.has_issues() {
+            return Err(());
         }
 
-        return Ok(RodValue::Array(valid_items));
+        Ok(RodValue::Array(valid_items))
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

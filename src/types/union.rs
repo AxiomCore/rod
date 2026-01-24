@@ -1,7 +1,7 @@
 use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
-use crate::error::{RodError, RodResult};
+use crate::error::{RodIssueCode, ValidationContext};
 
 #[derive(Debug, Clone)]
 pub struct RodUnion {
@@ -15,15 +15,26 @@ impl RodUnion {
 }
 
 impl RodValidator for RodUnion {
-    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
+    fn validate_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
         for validator in &self.options {
-            if let Ok(val) = validator.validate(input) {
+            // Critical: Use fork() to preserve recursion depth in trial validation
+            let mut temp_ctx = ctx.fork();
+
+            // If validation succeeds in temp context, we return immediately.
+            // Temp issues are discarded.
+            if let Ok(val) = validator.validate_with_context(&mut temp_ctx, input) {
                 return Ok(val);
             }
         }
-        Err(RodError::new("invalid_union", "Invalid input"))
+
+        ctx.add_issue(RodIssueCode::InvalidUnion, "Invalid input".into());
+        Err(())
     }
-    // ... clone/partial impls same as before
+
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
         use crate::types::optional::OptionalExtension;
         let partial_options = self
@@ -33,6 +44,7 @@ impl RodValidator for RodUnion {
             .collect();
         Box::new(RodUnion::new(partial_options).optional())
     }
+
     fn clone_box(&self) -> Box<dyn RodValidator> {
         Box::new(self.clone())
     }

@@ -1,8 +1,8 @@
 use rod::io::json::wrap;
 use rod::types::object::object;
 use rod::{
-    RodValidator, any, enum_type, intersection, lazy, literal, never, number, refine, rod_obj,
-    string, transform, union,
+    RodValidator, RodValue, any, enum_type, intersection, lazy, literal, never, number, refine,
+    rod_obj, string, transform, union,
 };
 use serde_json::json;
 use std::collections::HashMap; // for manual map construction if needed
@@ -67,7 +67,7 @@ fn test_refine_transform() {
             }
         }),
         // Transform still gets an owned Value, this part doesn't change
-        |v| json!(v.as_str().unwrap().to_uppercase()),
+        |v| RodValue::Json(json!(v.as_str().unwrap().to_uppercase())),
     );
     let valid = json!("racecar");
     let input = wrap(&valid);

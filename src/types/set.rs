@@ -1,7 +1,7 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
-use crate::error::{RodError, RodResult};
+use crate::error::{RodIssueCode, ValidationContext};
 use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
@@ -30,75 +30,81 @@ impl RodSet {
 }
 
 impl RodValidator for RodSet {
-    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
+    fn validate_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
         if input.get_type() != DataType::Array {
-            return Err(RodError::new("invalid_type", "Expected array (set)"));
+            ctx.add_issue(
+                RodIssueCode::InvalidType {
+                    expected: "array (set)".into(),
+                    received: "unknown".into(),
+                },
+                "Expected array (set)".into(),
+            );
+            return Err(());
         }
 
-        let mut issues = Vec::new();
-        let mut valid_items = Vec::new();
-        let mut seen = HashSet::new();
         let len = input.count().unwrap_or(0);
+        let mut valid_items = Vec::with_capacity(len);
+        let mut seen = HashSet::new();
 
-        for i in 0..len {
-            if let Some(item_input) = input.get_index(i) {
-                // Check Uniqueness using json string representation
-                let s = item_input.to_json().to_string();
-                if !seen.insert(s) {
-                    issues.push(crate::error::RodIssue {
-                        details: crate::error::RodIssueCode::Custom {
-                            message: "Items must be unique".to_string(),
-                            params: None,
-                        },
-                        message: "Items must be unique".to_string(),
-                        path: vec![i.to_string()],
-                    });
-                }
-
-                match self.value_type.validate(item_input.as_ref()) {
-                    Ok(v) => valid_items.push(v.into_owned()),
-                    Err(mut e) => {
-                        e.prepend_path(&i.to_string());
-                        issues.extend(e.issues);
-                    }
-                }
-            }
-        }
-
-        // Size checks
         if let Some(min) = self.min {
             if len < min {
-                issues.push(crate::error::RodIssue {
-                    details: crate::error::RodIssueCode::TooSmall {
+                ctx.add_issue(
+                    RodIssueCode::TooSmall {
                         minimum: min as f64,
                         inclusive: true,
-                        type_: "set".to_string(),
+                        type_: "set".into(),
                     },
-                    message: format!("Set must contain at least {} items", min),
-                    path: vec![],
-                });
+                    format!("Set too small"),
+                );
             }
         }
         if let Some(max) = self.max {
             if len > max {
-                issues.push(crate::error::RodIssue {
-                    details: crate::error::RodIssueCode::TooBig {
+                ctx.add_issue(
+                    RodIssueCode::TooBig {
                         maximum: max as f64,
                         inclusive: true,
-                        type_: "set".to_string(),
+                        type_: "set".into(),
                     },
-                    message: format!("Set must contain at most {} element(s)", max),
-                    path: vec![],
-                });
+                    format!("Set too big"),
+                );
             }
         }
 
-        if !issues.is_empty() {
-            return Err(RodError { issues });
+        for i in 0..len {
+            let item_res = ctx.with_index(i, |sub_ctx| {
+                input.with_index(i, &mut |item_input| {
+                    // Uniqueness Check via JSON string
+                    let s = item_input.to_json().to_string();
+                    if !seen.insert(s) {
+                        sub_ctx.add_issue(
+                            RodIssueCode::Custom {
+                                message: "Items must be unique".into(),
+                                params: None,
+                            },
+                            "Items must be unique".into(),
+                        );
+                    }
+                    self.value_type.validate_with_context(sub_ctx, item_input)
+                })
+            });
+
+            if let Some(Ok(v)) = item_res {
+                valid_items.push(v);
+            } else if ctx.should_abort() {
+                return Err(());
+            }
         }
 
-        // Return as Array (JSON doesn't have Set type)
-        return Ok(RodValue::Array(valid_items));
+        if ctx.has_issues() {
+            return Err(());
+        }
+
+        Ok(RodValue::Array(valid_items))
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

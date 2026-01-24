@@ -1,7 +1,7 @@
 use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
-use crate::error::RodResult;
+use crate::error::ValidationContext;
 use std::fmt;
 use std::sync::Arc;
 
@@ -35,9 +35,13 @@ impl RodLazy {
 }
 
 impl RodValidator for RodLazy {
-    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
+    fn validate_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
         let validator = (self.builder)();
-        validator.validate(input)
+        validator.validate_with_context(ctx, input)
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

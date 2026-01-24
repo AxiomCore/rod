@@ -1,7 +1,7 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
-use crate::error::RodResult;
+use crate::error::ValidationContext;
 
 #[derive(Debug, Clone)]
 pub struct RodNullable {
@@ -15,16 +15,20 @@ impl RodNullable {
 }
 
 impl RodValidator for RodNullable {
-    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
+    fn validate_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
         if input.get_type() == DataType::Null {
             return Ok(RodValue::Null);
         }
-        self.inner.validate(input)
+        self.inner.validate_with_context(ctx, input)
     }
-    // ... clone/partial same ...
+
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
         use crate::types::optional::OptionalExtension;
-        Box::new(self.inner.deep_partial_boxed().nullable().optional()) // Nullable + Optional
+        Box::new(self.inner.deep_partial_boxed().nullable().optional())
     }
     fn clone_box(&self) -> Box<dyn RodValidator> {
         Box::new(self.clone())

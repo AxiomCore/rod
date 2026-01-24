@@ -1,9 +1,19 @@
-// src/schema/parser.rs
 use crate::core::validator::RodValidator;
-use crate::types::{
-    array, boolean, discriminated_union, enum_type, literal, map, number, object, record, set,
-    string, tuple, union,
-};
+// Explicitly import factory functions to avoid module name clashes
+use crate::types::array::array;
+use crate::types::boolean::boolean;
+use crate::types::date::date;
+use crate::types::discriminated_union::discriminated_union_map;
+use crate::types::literal::literal;
+use crate::types::map::map;
+use crate::types::number::number;
+use crate::types::object::object;
+use crate::types::record::record;
+use crate::types::set::set;
+use crate::types::string::string;
+use crate::types::tuple::tuple;
+use crate::types::union::union;
+
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -27,8 +37,6 @@ pub enum RodSpec {
         includes: Option<String>,
         #[serde(default)]
         trim: bool,
-        #[serde(default)]
-        coerce: bool,
     },
     Number {
         min: Option<f64>,
@@ -45,7 +53,6 @@ pub enum RodSpec {
         properties: HashMap<String, RodSpec>,
         strict: Option<bool>,
     },
-    // --- Phase 3 Additions ---
     Union {
         options: Vec<RodSpec>,
     },
@@ -75,16 +82,30 @@ pub enum RodSpec {
         options: Vec<RodSpec>,
     },
     Date {
-        min: Option<i64>, // Pass timestamps in spec
+        min: Option<i64>,
         max: Option<i64>,
     },
 }
 
 impl RodSpec {
+    fn find_discriminator_value(&self, key: &str) -> Option<String> {
+        match self {
+            RodSpec::Object { properties, .. } => {
+                if let Some(spec) = properties.get(key) {
+                    if let RodSpec::Literal { value } = spec {
+                        return value.as_str().map(|s| s.to_string());
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
     pub fn build(&self) -> Box<dyn RodValidator> {
         match self {
             RodSpec::Date { min, max } => {
-                let mut d = crate::types::date::date();
+                let mut d = date();
                 if let Some(v) = min {
                     d = d.min(*v);
                 }
@@ -108,9 +129,8 @@ impl RodSpec {
                 ends_with,
                 includes,
                 trim,
-                coerce: _coerce,
             } => {
-                let mut s = string::string();
+                let mut s = string();
                 if let Some(v) = min {
                     s = s.min(*v);
                 }
@@ -120,7 +140,6 @@ impl RodSpec {
                 if let Some(v) = length {
                     s = s.length(*v);
                 }
-
                 if email.unwrap_or(false) {
                     s = s.email();
                 }
@@ -139,7 +158,6 @@ impl RodSpec {
                 if ip.unwrap_or(false) {
                     s = s.ip();
                 }
-
                 if let Some(v) = regex {
                     s = s.regex(v);
                 }
@@ -152,16 +170,13 @@ impl RodSpec {
                 if let Some(v) = includes {
                     s = s.includes(v);
                 }
-
                 if *trim {
                     s = s.trim();
                 }
-
-                // ... coercion wrapper logic ...
                 Box::new(s)
             }
             RodSpec::Number { min, max, int } => {
-                let mut n = number::number();
+                let mut n = number();
                 if let Some(v) = min {
                     n = n.min(*v);
                 }
@@ -173,9 +188,9 @@ impl RodSpec {
                 }
                 Box::new(n)
             }
-            RodSpec::Boolean => Box::new(boolean::boolean()),
+            RodSpec::Boolean => Box::new(boolean()),
             RodSpec::Array { items, min, max } => {
-                let mut a = array::array(items.build());
+                let mut a = array(items.build());
                 if let Some(v) = min {
                     a = a.min(*v);
                 }
@@ -189,7 +204,7 @@ impl RodSpec {
                 for (k, v) in properties {
                     map.insert(k.clone(), v.build());
                 }
-                let mut obj = object::object(map);
+                let mut obj = object(map);
                 if strict.unwrap_or(false) {
                     obj = obj.strict();
                 } else {
@@ -197,53 +212,36 @@ impl RodSpec {
                 }
                 Box::new(obj)
             }
-            // --- Phase 3 Logic ---
             RodSpec::Union { options } => {
-                let validators = options.iter().map(|o| o.build()).collect();
-                Box::new(union::union(validators))
+                Box::new(union(options.iter().map(|o| o.build()).collect()))
             }
-            RodSpec::Literal { value } => Box::new(literal::literal(value.clone())),
+            RodSpec::Literal { value } => Box::new(literal(value.clone())),
             RodSpec::Enum { values } => {
-                let str_refs: Vec<&str> = values.iter().map(|s| s.as_str()).collect();
-                Box::new(enum_type::enum_type(str_refs))
+                Box::new(crate::types::enum_type::RodEnum::new(values.clone()))
             }
-            RodSpec::Tuple { items } => {
-                let validators = items.iter().map(|i| i.build()).collect();
-                Box::new(tuple::tuple(validators))
-            }
-            RodSpec::Record { key, value } => Box::new(record::record(key.build(), value.build())),
+            RodSpec::Tuple { items } => Box::new(tuple(items.iter().map(|i| i.build()).collect())),
+            RodSpec::Record { key, value } => Box::new(record(key.build(), value.build())),
             RodSpec::Set { value, min } => {
-                let mut s = set::set(value.build());
-                if let Some(m) = min {
-                    s = s.min(*m);
+                let mut s = set(value.build());
+                if let Some(v) = min {
+                    s = s.min(*v);
                 }
                 Box::new(s)
             }
-            RodSpec::Map { key, value } => Box::new(map::map(key.build(), value.build())),
+            RodSpec::Map { key, value } => Box::new(map(key.build(), value.build())),
             RodSpec::DiscriminatedUnion {
                 discriminator,
                 options,
             } => {
                 let mut map = HashMap::new();
-
                 for opt in options {
-                    // In a real implementation, we must peek into 'opt' (which must be an Object spec)
-                    // find the property matching 'discriminator', ensure it is a Literal spec,
-                    // extract the value, and use that as the map key.
-
-                    if let RodSpec::Object { properties, .. } = opt {
-                        if let Some(RodSpec::Literal { value }) = properties.get(discriminator) {
-                            if let Value::String(s) = value {
-                                map.insert(s.clone(), opt.build());
-                            }
-                        }
+                    if let Some(val) = opt.find_discriminator_value(discriminator) {
+                        map.insert(val, opt.build());
+                    } else {
+                        // For simplicity in parser, assume spec is correct or ignore
                     }
                 }
-
-                Box::new(discriminated_union::discriminated_union_map(
-                    discriminator.clone(),
-                    map,
-                ))
+                Box::new(discriminated_union_map(discriminator.clone(), map))
             }
         }
     }

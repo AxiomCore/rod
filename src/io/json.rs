@@ -1,4 +1,5 @@
 use crate::core::input::{DataType, RodInput};
+use crate::core::value::RodValue;
 use serde_json::Value;
 use std::borrow::Cow;
 
@@ -18,7 +19,6 @@ impl<'a> RodInput<'a> for JsonInput<'a> {
     }
 
     fn as_str(&self) -> Option<Cow<'a, str>> {
-        // self.0 is &'a Value. as_str() returns &'a str.
         self.0.as_str().map(Cow::Borrowed)
     }
 
@@ -30,20 +30,32 @@ impl<'a> RodInput<'a> for JsonInput<'a> {
         self.0.as_i64()
     }
 
+    fn as_u64(&self) -> Option<u64> {
+        self.0.as_u64()
+    }
+
     fn as_bool(&self) -> Option<bool> {
         self.0.as_bool()
     }
 
-    fn get_key(&self, key: &str) -> Option<Box<dyn RodInput<'a> + '_>> {
-        self.0
-            .get(key)
-            .map(|v| Box::new(JsonInput(v)) as Box<dyn RodInput<'a>>)
+    fn with_key(
+        &self,
+        key: &str,
+        f: &mut dyn FnMut(&dyn RodInput<'a>) -> Result<RodValue<'a>, ()>,
+    ) -> Option<Result<RodValue<'a>, ()>> {
+        let val = self.0.get(key)?;
+        let wrapper = JsonInput(val);
+        Some(f(&wrapper))
     }
 
-    fn get_index(&self, index: usize) -> Option<Box<dyn RodInput<'a> + '_>> {
-        self.0
-            .get(index)
-            .map(|v| Box::new(JsonInput(v)) as Box<dyn RodInput<'a>>)
+    fn with_index(
+        &self,
+        index: usize,
+        f: &mut dyn FnMut(&dyn RodInput<'a>) -> Result<RodValue<'a>, ()>,
+    ) -> Option<Result<RodValue<'a>, ()>> {
+        let val = self.0.get(index)?;
+        let wrapper = JsonInput(val);
+        Some(f(&wrapper))
     }
 
     fn count(&self) -> Option<usize> {
@@ -54,15 +66,19 @@ impl<'a> RodInput<'a> for JsonInput<'a> {
         }
     }
 
-    fn keys(&self) -> Option<Box<dyn Iterator<Item = String> + '_>> {
+    fn keys(&self) -> Option<Box<dyn Iterator<Item = Cow<'a, str>> + '_>> {
         match self.0 {
-            Value::Object(obj) => Some(Box::new(obj.keys().cloned())),
+            Value::Object(obj) => Some(Box::new(obj.keys().map(|k| Cow::Borrowed(k.as_str())))),
             _ => None,
         }
     }
 
     fn to_json(&self) -> Value {
         self.0.clone()
+    }
+
+    fn clone_box(&self) -> Box<dyn RodInput<'a> + 'a> {
+        Box::new(JsonInput(self.0))
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
-use crate::error::{RodError, RodResult};
+use crate::error::{RodIssueCode, ValidationContext};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -20,52 +20,60 @@ impl RodDiscriminatedUnion {
 }
 
 impl RodValidator for RodDiscriminatedUnion {
-    fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
-        // 1. Check if input is an object
+    fn validate_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
         if input.get_type() != DataType::Object {
-            return Err(RodError::new("invalid_type", "Expected object"));
+            ctx.add_issue(
+                RodIssueCode::InvalidType {
+                    expected: "object".into(),
+                    received: "unknown".into(),
+                },
+                "Expected object".into(),
+            );
+            return Err(());
         }
 
-        // 2. Extract discriminator value
-        // We use the trait method get_key
-        let disc_input = match input.get_key(&self.discriminator) {
-            Some(v) => v,
-            None => {
-                // Try checking raw if needed? RodInput usually handles this.
-                return Err(RodError::new(
-                    "invalid_discriminator",
-                    "Discriminator key missing",
-                ));
+        // Use with_key to get discriminator
+        let disc_val_opt = input.with_key(&self.discriminator, &mut |disc_input| {
+            // We need to return the value to decide which schema to use.
+            // But with_key expects Result<RodValue>.
+            // We return the extracted string as RodValue::String for processing.
+            match disc_input.as_str() {
+                Some(s) => Ok(RodValue::String(s)),
+                None => Err(()), // Signal failure to extract string
+            }
+        });
+
+        // Flatten Option<Result<RodValue>>
+        let disc_cow = match disc_val_opt {
+            Some(Ok(RodValue::String(s))) => s,
+            _ => {
+                ctx.add_issue(
+                    RodIssueCode::InvalidUnionDiscriminator { expected: vec![] },
+                    "Discriminator missing or invalid".into(),
+                );
+                return Err(());
             }
         };
 
-        // Ensure it is a string
-        // Note: as_str might return Option<&str> or Option<Cow<str>>
-        let disc_value = match disc_input.as_str() {
-            Some(s) => s,
-            None => {
-                return Err(RodError::new(
-                    "invalid_discriminator",
-                    "Discriminator value must be a string",
-                ));
-            }
-        };
-
-        // 3. Select matching validator
-        if let Some(validator) = self.options.get(disc_value.as_ref()) {
-            return validator.validate(input);
+        if let Some(validator) = self.options.get(disc_cow.as_ref()) {
+            return validator.validate_with_context(ctx, input);
         }
 
-        Err(RodError::new(
-            "invalid_union_discriminator",
-            &format!("Invalid discriminator value: {}", disc_value),
-        ))
+        ctx.add_issue(
+            RodIssueCode::InvalidUnionDiscriminator {
+                expected: self.options.keys().cloned().collect(),
+            },
+            format!("Invalid discriminator value: {}", disc_cow),
+        );
+        Err(())
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
         use crate::types::optional::OptionalExtension;
-        // Cannot easily deep partial a discriminated union while keeping discriminator required.
-        // Returning optional of self.
         Box::new(self.clone().optional())
     }
 

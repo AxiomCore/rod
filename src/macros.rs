@@ -1,5 +1,3 @@
-// src/macros.rs
-
 #[macro_export]
 macro_rules! rod_obj {
     ( $( $key:ident : $schema:expr ),* $(,)? ) => {
