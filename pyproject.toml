@@ -1,0 +1,17 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "rod"
+version = "0.1.0"
+description = "A high-performance schema validation library for Python, powered by Rust."
+authors = [{ name = "Yash Makan" }]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.8"
+
+[tool.maturin]
+manifest-path = "rod-pyo3/Cargo.toml"
+module-name = "rod.rod_pyo3"
+# python-source removed - it now defaults to the current directory
