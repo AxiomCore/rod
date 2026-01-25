@@ -1,37 +1,46 @@
-/target/
-Cargo.lock
-
-.vscode/
-
-.idea/
-
+# --- General / IDE ---
 .DS_Store
+.vscode/
+.idea/
+*.swp
+*.log
 
-/node_modules/
-/rod-js/node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-/rod-js/dist/
+# --- Rust / Cargo ---
+/target/
+# Note: It's standard practice to commit Cargo.lock for monorepos 
+# to ensure consistent builds across all contributors.
 
-/rod-wasm/pkg/
+# --- JavaScript & TypeScript (languages/js) ---
+node_modules/
+/languages/js/dist/
+/languages/js/wasm/
+/languages/js/package-lock.json
 
+# --- Python (languages/python) ---
 __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-/rod-py/target/ # Covered by /target/ but good to be explicit
-*.so
-*.pyd
-*.dylib
-build/
-dist/
-sdist/
-wheel/
-*.egg-info/
+/languages/python/dist/
+/languages/python/build/
+/languages/python/*.egg-info/
+# Native extension binaries (compiled by Maturin)
+/languages/python/rod/*.so
+/languages/python/rod/*.pyd
+/languages/python/rod/*.dylib
+
+# --- Python Virtual Environments ---
 .venv/
 venv/
+ENV/
+
+# --- WASM Bindings (bindings/rod-wasm) ---
+/bindings/rod-wasm/pkg/
+
+# --- Documentation (docs - Next.js) ---
+/docs/.next/
+/docs/node_modules/
+/docs/out/
+/docs/.turbo/

@@ -1,0 +1,25 @@
+{
+    "name": "rod-js",
+    "version": "0.2.0",
+    "description": "JavaScript/TypeScript bindings for the Rod validation library",
+    "main": "./dist/index-node.js",
+    "module": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "files": [
+        "dist",
+        "wasm"
+    ],
+    "exports": {
+        ".": {
+            "node": "./dist/index-node.js",
+            "default": "./dist/index.js"
+        }
+    },
+    "scripts": {
+        "build": "npx tsc",
+        "test": "node tests/test-node.js"
+    },
+    "devDependencies": {
+        "typescript": "^5.0.0"
+    }
+}

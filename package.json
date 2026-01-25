@@ -1,18 +1,15 @@
 {
-  "name": "rod-monorepo",
-  "version": "1.0.0",
-  "private": true,
-  "workspaces": [
-    "rod-js",
-    "rod-wasm"
-  ],
-  "scripts": {
-    "build:wasm": "bash build-wasm.sh",
-    "build:js": "npm run build --workspace=rod-js",
-    "build": "npm run build:wasm && npm run build:js",
-    "test": "npm test --workspace=rod-js"
-  },
-  "dependencies": {
-    "typescript": "^5.9.3"
-  }
+    "name": "rod-monorepo",
+    "private": true,
+    "description": "Orchestrator for Rod JS and Documentation",
+    "workspaces": [
+        "languages/js",
+        "docs"
+    ],
+    "scripts": {
+        "build:wasm": "just build-wasm",
+        "build:js": "npm run build -w languages/js",
+        "build": "npm run build:wasm && npm run build:js",
+        "test:js": "npm test -w languages/js"
+    }
 }
