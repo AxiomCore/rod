@@ -1,0 +1,11 @@
+{
+    "name": "rod-js-bench",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "dependencies": {
+        "zod": "^3.23.0",
+        "rod-js": "file:..",
+        "mitata": "^0.1.11"
+    }
+}

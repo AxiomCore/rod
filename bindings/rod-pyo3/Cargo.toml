@@ -1,0 +1,16 @@
+[package]
+name = "rod-pyo3"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rod_pyo3"
+crate-type = ["cdylib"]
+
+[dependencies]
+rod = { path = "../../core", features = ["non-thread-safe"] }
+pyo3 = { version = "0.22.2", features = ["extension-module"] }
+# Official bridge for Serde <-> PyO3
+pythonize = "0.22.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
