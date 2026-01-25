@@ -8,6 +8,7 @@ pub mod intersection;
 pub mod lazy;
 pub mod literal;
 pub mod map;
+pub mod node;
 pub mod nullable;
 pub mod number;
 pub mod object;

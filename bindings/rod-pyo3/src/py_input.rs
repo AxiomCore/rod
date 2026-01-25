@@ -8,6 +8,37 @@ use std::borrow::Cow;
 #[derive(Debug, Clone)]
 pub struct PyInput<'a>(pub Bound<'a, PyAny>);
 
+/// Zero-allocation iterator for Python Dictionary keys.
+/// We use Box<dyn Iterator> to abstract away the concrete PyO3 iterator type,
+/// which ensures compatibility across PyO3 versions and ABI configurations.
+pub struct PyKeyIterator<'a> {
+    iter: Box<dyn Iterator<Item = (Bound<'a, PyAny>, Bound<'a, PyAny>)> + 'a>,
+}
+
+impl<'a> Iterator for PyKeyIterator<'a> {
+    type Item = Cow<'a, str>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            // PyDictIterator yields (key, value) pairs.
+            // We only need the key.
+            let (key, _) = self.iter.next()?;
+
+            // We attempt to cast to string. If it's not a string, we skip it
+            // (Standard JSON/Object validation usually implies string keys).
+            if let Ok(py_str) = key.downcast::<PyString>() {
+                if let Ok(slice) = py_str.to_str() {
+                    // SAFETY: The Python string object is kept alive by the dictionary,
+                    // which is kept alive by Bound<'a>. The string data is pinned in memory.
+                    // We extend the lifetime of the slice to 'a to satisfy the trait interface.
+                    let slice_a: &'a str = unsafe { std::mem::transmute(slice) };
+                    return Some(Cow::Borrowed(slice_a));
+                }
+            }
+        }
+    }
+}
+
 impl<'a> RodInput<'a> for PyInput<'a> {
     fn get_type(&self) -> DataType {
         if self.0.is_none() {
@@ -23,7 +54,7 @@ impl<'a> RodInput<'a> for PyInput<'a> {
         } else if self.0.is_instance_of::<PyDict>() {
             DataType::Object
         } else {
-            // Fallback for custom objects? Treat as unknown/object for now
+            // Fallback for custom objects
             DataType::Unknown
         }
     }
@@ -31,10 +62,7 @@ impl<'a> RodInput<'a> for PyInput<'a> {
     fn as_str(&self) -> Option<Cow<'a, str>> {
         let s = self.0.downcast::<PyString>().ok()?;
         let slice = s.to_str().ok()?;
-        // SAFETY: Python strings are immutable and pinned in memory.
-        // The Bound<'a> wrapper ensures the object remains alive for lifetime 'a.
-        // We extend the lifetime of the slice from the local borrow to 'a to satisfy the trait.
-        // This avoids allocation (Zero-Copy).
+        // SAFETY: Python strings are immutable and pinned.
         let slice_a: &'a str = unsafe { std::mem::transmute(slice) };
         Some(Cow::Borrowed(slice_a))
     }
@@ -61,9 +89,9 @@ impl<'a> RodInput<'a> for PyInput<'a> {
         f: &mut dyn FnMut(&dyn RodInput<'a>) -> Result<RodValue<'a>, ()>,
     ) -> Option<Result<RodValue<'a>, ()>> {
         if let Ok(dict) = self.0.downcast::<PyDict>() {
+            // get_item returns Option<Bound>, avoiding Exception overhead.
             match dict.get_item(key) {
                 Ok(Some(item)) => {
-                    // item is Bound<'a, PyAny>
                     let input = PyInput(item);
                     Some(f(&input))
                 }
@@ -114,26 +142,17 @@ impl<'a> RodInput<'a> for PyInput<'a> {
 
     fn keys(&self) -> Option<Box<dyn Iterator<Item = Cow<'a, str>> + '_>> {
         if let Ok(dict) = self.0.downcast::<PyDict>() {
-            let keys_list = dict.keys();
-            let mut keys_vec = Vec::with_capacity(keys_list.len());
-            for item in keys_list.iter() {
-                if let Ok(s) = item.downcast::<PyString>() {
-                    if let Ok(utf8) = s.to_str() {
-                        // SAFETY: Keys are immutable strings kept alive by the dict,
-                        // which is kept alive by Bound<'a>. Zero-Copy keys.
-                        let utf8_a: &'a str = unsafe { std::mem::transmute(utf8) };
-                        keys_vec.push(Cow::Borrowed(utf8_a));
-                    }
-                }
-            }
-            Some(Box::new(keys_vec.into_iter()))
+            // OPTIMIZATION: We use dict.iter() which is a native C-iterator.
+            // We box it to hide the concrete type (PyDictIterator vs BoundDictIterator).
+            // This incurs 1 allocation (the Box) instead of N allocations (keys list).
+            let iter = Box::new(dict.iter());
+            Some(Box::new(PyKeyIterator { iter }))
         } else {
             None
         }
     }
 
     fn to_json(&self) -> serde_json::Value {
-        // Fallback to serialization if the validator needs to materialize the value (e.g. for return)
         depythonize(&self.0).unwrap_or(serde_json::Value::Null)
     }
 

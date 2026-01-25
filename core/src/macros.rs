@@ -2,11 +2,14 @@
 macro_rules! rod_obj {
     ( $( $key:ident : $schema:expr ),* $(,)? ) => {
         {
-            let mut shape: std::collections::HashMap<String, Box<dyn $crate::core::validator::RodValidator>> = std::collections::HashMap::new();
+            let mut shape: std::collections::HashMap<String, $crate::types::node::RodNode> = std::collections::HashMap::new();
             $(
-                shape.insert(stringify!($key).to_string(), Box::new($schema));
+                shape.insert(
+                    stringify!($key).to_string(),
+                    $crate::types::node::IntoRodNode::into_node($schema)
+                );
             )*
-            $crate::types::object::object(shape)
+            $crate::types::object::RodObject::new(shape)
         }
     };
 }

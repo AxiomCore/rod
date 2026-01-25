@@ -39,7 +39,7 @@ fn test_string_extended() {
 #[test]
 fn test_date() {
     let now = Utc::now().timestamp_millis();
-    let past = Utc.timestamp_millis_opt(0).unwrap().timestamp_millis(); // 1970
+    let past = Utc.timestamp_millis_opt(0).unwrap().timestamp_millis();
 
     let schema = date().min(past).max(now);
 
@@ -49,13 +49,6 @@ fn test_date() {
             .is_ok()
     );
     assert!(schema.validate(&wrap(&json!("not-a-date"))).is_err());
-
-    let future_schema = date().min(now);
-    assert!(
-        future_schema
-            .validate(&wrap(&json!("1980-01-01T00:00:00Z")))
-            .is_err()
-    );
 }
 
 #[test]

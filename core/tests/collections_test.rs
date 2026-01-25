@@ -1,10 +1,10 @@
 use rod::io::json::wrap;
-use rod::{RodValidator, map, number, set, string, tuple};
+use rod::{IntoRodNode, RodValidator, map, number, set, string, tuple};
 use serde_json::json;
 
 #[test]
 fn test_tuple() {
-    let point_schema = tuple(vec![Box::new(string()), Box::new(number())]);
+    let point_schema = tuple(vec![string().into_node(), number().into_node()]);
     assert!(point_schema.validate(&wrap(&json!(["lat", 45.0]))).is_ok());
     assert!(
         point_schema

@@ -2,14 +2,15 @@ use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
 use crate::error::{RodIssueCode, ValidationContext};
+use crate::types::node::{IntoRodNode, RodNode, wrap_custom};
 
 #[derive(Debug, Clone)]
 pub struct RodTuple {
-    items: Vec<Box<dyn RodValidator>>,
+    items: Vec<RodNode>,
 }
 
 impl RodTuple {
-    pub fn new(items: Vec<Box<dyn RodValidator>>) -> Self {
+    pub fn new(items: Vec<RodNode>) -> Self {
         Self { items }
     }
 }
@@ -48,6 +49,7 @@ impl RodValidator for RodTuple {
         for (i, validator) in self.items.iter().enumerate() {
             let item_res = ctx.with_index(i, |sub_ctx| {
                 input.with_index(i, &mut |item_input| {
+                    // STATIC DISPATCH via RodNode
                     validator.validate_with_context(sub_ctx, item_input)
                 })
             });
@@ -68,7 +70,11 @@ impl RodValidator for RodTuple {
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
         use crate::types::optional::OptionalExtension;
-        let partial_items = self.items.iter().map(|i| i.deep_partial_boxed()).collect();
+        let partial_items = self
+            .items
+            .iter()
+            .map(|i| wrap_custom(i.deep_partial_boxed()))
+            .collect();
         Box::new(RodTuple::new(partial_items).optional())
     }
 
@@ -77,6 +83,6 @@ impl RodValidator for RodTuple {
     }
 }
 
-pub fn tuple(items: Vec<Box<dyn RodValidator>>) -> RodTuple {
-    RodTuple::new(items)
+pub fn tuple<T: IntoRodNode>(items: Vec<T>) -> RodTuple {
+    RodTuple::new(items.into_iter().map(|i| i.into_node()).collect())
 }

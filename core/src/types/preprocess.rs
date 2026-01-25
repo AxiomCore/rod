@@ -2,6 +2,7 @@ use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
 use crate::error::ValidationContext;
+use crate::types::node::{IntoRodNode, RodNode};
 use serde_json::Value;
 use std::borrow::Cow;
 use std::fmt;
@@ -12,7 +13,8 @@ where
     F: for<'i> Fn(&dyn RodInput<'i>) -> Value + Send + Sync + Clone,
 {
     preprocessor: F,
-    schema: Box<dyn RodValidator>,
+    // UPDATED: Holds the Enum node for hybrid dispatch
+    schema: Box<RodNode>,
 }
 
 impl<F> fmt::Debug for RodPreprocess<F>
@@ -31,10 +33,10 @@ impl<F> RodPreprocess<F>
 where
     F: for<'i> Fn(&dyn RodInput<'i>) -> Value + Send + Sync + Clone,
 {
-    pub fn new(preprocessor: F, schema: Box<dyn RodValidator>) -> Self {
+    pub fn new(preprocessor: F, schema: RodNode) -> Self {
         Self {
             preprocessor,
-            schema,
+            schema: Box::new(schema),
         }
     }
 }
@@ -45,8 +47,6 @@ struct LocalValueInput<'a, 'b>(&'a RodValue<'b>);
 
 impl<'a, 'b> RodInput<'a> for LocalValueInput<'a, 'b> {
     fn get_type(&self) -> DataType {
-        // Proxy to inner RodValue (using basic mapping logic from core/value.rs)
-        // For brevity, we map the types we expect from preprocess (JSON usually)
         match self.0 {
             RodValue::Json(v) => match v {
                 Value::String(_) => DataType::String,
@@ -56,7 +56,6 @@ impl<'a, 'b> RodInput<'a> for LocalValueInput<'a, 'b> {
                 Value::Array(_) => DataType::Array,
                 Value::Object(_) => DataType::Object,
             },
-            // Fallback for others
             RodValue::String(_) => DataType::String,
             RodValue::Number(_) => DataType::Number,
             RodValue::Boolean(_) => DataType::Boolean,
@@ -67,9 +66,6 @@ impl<'a, 'b> RodInput<'a> for LocalValueInput<'a, 'b> {
         }
     }
 
-    // We must implement all methods to proxy.
-    // NOTE: We return Cow<'a, str>. 'a is the lifetime of the wrapper (Local stack).
-    // This allows us to borrow from the local `rod_val`.
     fn as_str(&self) -> Option<Cow<'a, str>> {
         self.0.as_str().map(|s| Cow::Borrowed(s))
     }
@@ -105,7 +101,6 @@ impl<'a, 'b> RodInput<'a> for LocalValueInput<'a, 'b> {
         key: &str,
         f: &mut dyn FnMut(&dyn RodInput<'a>) -> Result<RodValue<'a>, ()>,
     ) -> Option<Result<RodValue<'a>, ()>> {
-        // For JSON value, we can use crate::io::json::JsonInput
         match self.0 {
             RodValue::Json(Value::Object(map)) => map.get(key).map(|v| {
                 let wrapper = crate::io::json::JsonInput(v);
@@ -151,13 +146,9 @@ impl<'a, 'b> RodInput<'a> for LocalValueInput<'a, 'b> {
     }
 
     fn clone_box(&self) -> Box<dyn RodInput<'a> + 'a> {
-        // We cannot clone a reference to local stack variable into a Box that leaves.
-        // But logic using clone_box (Lazy) inside preprocess is rare/unsupported for local vars.
-        // We fallback to owned copy.
         Box::new(crate::io::json::JsonInput(Box::leak(Box::new(
             self.0.to_json(),
-        )))) // Leak is bad, but preprocess + lazy is edge case.
-        // BETTER: Preprocess converts to Owned JSON. We can just own it.
+        ))))
     }
 }
 
@@ -175,17 +166,13 @@ where
 
         // 2. Wrap and Validate
         let result_static = {
-            // rod_val owns the data (it is 'static effectively regarding 'a)
             let rod_val = RodValue::Json(processed_value);
-
-            // We use our local wrapper which allows 'local borrowing
             let wrapped_input = LocalValueInput(&rod_val);
 
-            // Validate.
-            // Result is RodValue<'local> (borrowing rod_val)
+            // HYBRID DISPATCH: Calling validate_with_context on RodNode Enum
             let result = self.schema.validate_with_context(ctx, &wrapped_input)?;
 
-            // Convert to RodValue<'static> (Owned)
+            // Convert to RodValue<'static> (Owned) to pass the boundary
             result.into_owned()
         };
 
@@ -221,10 +208,13 @@ fn cast_static_to_lifetime<'a>(v: RodValue<'static>) -> RodValue<'a> {
     }
 }
 
-pub fn preprocess<F, V>(preprocessor: F, schema: V) -> RodPreprocess<F>
+pub fn preprocess<F, V>(preprocessor: F, schema: V) -> RodNode
 where
     F: for<'i> Fn(&dyn RodInput<'i>) -> Value + Send + Sync + Clone + 'static,
-    V: RodValidator + 'static,
+    V: IntoRodNode + 'static,
 {
-    RodPreprocess::new(preprocessor, Box::new(schema))
+    RodNode::Custom(Box::new(RodPreprocess::new(
+        preprocessor,
+        schema.into_node(),
+    )))
 }

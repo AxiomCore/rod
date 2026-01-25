@@ -2,14 +2,16 @@ use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
 use crate::error::{RodIssueCode, ValidationContext};
+use crate::types::node::{IntoRodNode, RodNode};
 
 #[derive(Debug, Clone)]
 pub struct RodUnion {
-    options: Vec<Box<dyn RodValidator>>,
+    // UPDATED: Vec of Nodes
+    options: Vec<RodNode>,
 }
 
 impl RodUnion {
-    pub fn new(options: Vec<Box<dyn RodValidator>>) -> Self {
+    pub fn new(options: Vec<RodNode>) -> Self {
         Self { options }
     }
 }
@@ -21,11 +23,10 @@ impl RodValidator for RodUnion {
         input: &dyn RodInput<'a>,
     ) -> Result<RodValue<'a>, ()> {
         for validator in &self.options {
-            // Critical: Use fork() to preserve recursion depth in trial validation
+            // Use fork() (now optimized with SmallVec)
             let mut temp_ctx = ctx.fork();
 
-            // If validation succeeds in temp context, we return immediately.
-            // Temp issues are discarded.
+            // HYBRID DISPATCH: Calling validate on RodNode
             if let Ok(val) = validator.validate_with_context(&mut temp_ctx, input) {
                 return Ok(val);
             }
@@ -40,7 +41,10 @@ impl RodValidator for RodUnion {
         let partial_options = self
             .options
             .iter()
-            .map(|o| o.deep_partial_boxed())
+            .map(|o| {
+                // Wrap partial (Box<dyn>) into Node::Custom
+                crate::types::node::wrap_custom(o.deep_partial_boxed())
+            })
             .collect();
         Box::new(RodUnion::new(partial_options).optional())
     }
@@ -50,6 +54,6 @@ impl RodValidator for RodUnion {
     }
 }
 
-pub fn union(options: Vec<Box<dyn RodValidator>>) -> RodUnion {
-    RodUnion::new(options)
+pub fn union<T: IntoRodNode>(options: Vec<T>) -> RodUnion {
+    RodUnion::new(options.into_iter().map(|o| o.into_node()).collect())
 }

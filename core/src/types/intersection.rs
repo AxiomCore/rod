@@ -2,16 +2,20 @@ use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
 use crate::error::ValidationContext;
+use crate::types::node::{IntoRodNode, RodNode, wrap_custom};
 
 #[derive(Debug, Clone)]
 pub struct RodIntersection {
-    left: Box<dyn RodValidator>,
-    right: Box<dyn RodValidator>,
+    pub left: Box<RodNode>,
+    pub right: Box<RodNode>,
 }
 
 impl RodIntersection {
-    pub fn new(left: Box<dyn RodValidator>, right: Box<dyn RodValidator>) -> Self {
-        Self { left, right }
+    pub fn new(left: RodNode, right: RodNode) -> Self {
+        Self {
+            left: Box::new(left),
+            right: Box::new(right),
+        }
     }
 }
 
@@ -21,10 +25,9 @@ impl RodValidator for RodIntersection {
         ctx: &mut ValidationContext,
         input: &dyn RodInput<'a>,
     ) -> Result<RodValue<'a>, ()> {
-        // Validate against both
+        // STATIC DISPATCH
         let v1 = self.left.validate_with_context(ctx, input);
 
-        // If left failed and strict abort is on, exit early
         if v1.is_err() && ctx.should_abort() {
             return Err(());
         }
@@ -35,23 +38,22 @@ impl RodValidator for RodIntersection {
             return Err(());
         }
 
-        // Merging logic
         match (v1.unwrap(), v2.unwrap()) {
             (RodValue::Object(mut o1), RodValue::Object(o2)) => {
-                // Merge o2 into o1
                 o1.extend(o2);
                 Ok(RodValue::Object(o1))
             }
-            // For primitives, they must match (effectively refining the type), return the second (refined)
             (_, v2) => Ok(v2),
         }
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
         use crate::types::optional::OptionalExtension;
-        let partial_left = self.left.deep_partial_boxed();
-        let partial_right = self.right.deep_partial_boxed();
-        Box::new(RodIntersection::new(partial_left, partial_right).optional())
+        let partial_left = wrap_custom(self.left.deep_partial_boxed());
+        let partial_right = wrap_custom(self.right.deep_partial_boxed());
+        Box::new(
+            RodIntersection::new(partial_left.into_node(), partial_right.into_node()).optional(),
+        )
     }
 
     fn clone_box(&self) -> Box<dyn RodValidator> {
@@ -59,9 +61,6 @@ impl RodValidator for RodIntersection {
     }
 }
 
-pub fn intersection(
-    left: impl RodValidator + 'static,
-    right: impl RodValidator + 'static,
-) -> RodIntersection {
-    RodIntersection::new(Box::new(left), Box::new(right))
+pub fn intersection<L: IntoRodNode, R: IntoRodNode>(left: L, right: R) -> RodIntersection {
+    RodIntersection::new(left.into_node(), right.into_node())
 }

@@ -2,11 +2,13 @@ use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
 use crate::error::ValidationContext;
+use crate::types::node::{RodNode, wrap_custom};
 use std::fmt;
 use std::sync::Arc;
 
 pub struct RodLazy {
-    builder: Arc<dyn Fn() -> Box<dyn RodValidator> + Send + Sync>,
+    // UPDATED: Builder returns a concrete Node
+    builder: Arc<dyn Fn() -> RodNode + Send + Sync>,
 }
 
 impl Clone for RodLazy {
@@ -26,7 +28,8 @@ impl fmt::Debug for RodLazy {
 impl RodLazy {
     pub fn new<F>(builder: F) -> Self
     where
-        F: Fn() -> Box<dyn RodValidator> + Send + Sync + 'static,
+        // F returns RodNode
+        F: Fn() -> RodNode + Send + Sync + 'static,
     {
         Self {
             builder: Arc::new(builder),
@@ -40,14 +43,16 @@ impl RodValidator for RodLazy {
         ctx: &mut ValidationContext,
         input: &dyn RodInput<'a>,
     ) -> Result<RodValue<'a>, ()> {
-        let validator = (self.builder)();
-        validator.validate_with_context(ctx, input)
+        let node = (self.builder)();
+        // STATIC DISPATCH
+        node.validate_with_context(ctx, input)
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
         use crate::types::optional::OptionalExtension;
         let builder = self.builder.clone();
-        let lazy_partial = RodLazy::new(move || builder().deep_partial_boxed());
+        // Wrap the boxed partial into a Custom node to return a Node-compatible Lazy
+        let lazy_partial = RodLazy::new(move || wrap_custom(builder().deep_partial_boxed()));
         Box::new(lazy_partial.optional())
     }
 
@@ -58,7 +63,7 @@ impl RodValidator for RodLazy {
 
 pub fn lazy<F>(f: F) -> RodLazy
 where
-    F: Fn() -> Box<dyn RodValidator> + Send + Sync + 'static,
+    F: Fn() -> RodNode + Send + Sync + 'static,
 {
     RodLazy::new(f)
 }

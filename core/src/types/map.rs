@@ -2,18 +2,19 @@ use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
 use crate::error::{RodIssueCode, ValidationContext};
+use crate::types::node::{IntoRodNode, RodNode, wrap_custom};
 
 #[derive(Debug, Clone)]
 pub struct RodMap {
-    key_type: Box<dyn RodValidator>,
-    value_type: Box<dyn RodValidator>,
+    key_type: Box<RodNode>,
+    value_type: Box<RodNode>,
 }
 
 impl RodMap {
-    pub fn new(key: Box<dyn RodValidator>, value: Box<dyn RodValidator>) -> Self {
+    pub fn new(key: RodNode, value: RodNode) -> Self {
         Self {
-            key_type: key,
-            value_type: value,
+            key_type: Box::new(key),
+            value_type: Box::new(value),
         }
     }
 }
@@ -39,8 +40,6 @@ impl RodValidator for RodMap {
         let mut valid_entries = Vec::with_capacity(len);
 
         for i in 0..len {
-            // Path segment for array index
-            // We use with_index which uses zero-alloc enum path segment
             let entry_result = ctx.with_index(i, |sub_ctx| {
                 input.with_index(i, &mut |entry_input| {
                     if entry_input.get_type() != DataType::Array {
@@ -64,7 +63,7 @@ impl RodValidator for RodMap {
                         return Err(());
                     }
 
-                    // Validate Key (Index 0)
+                    // STATIC DISPATCH
                     let key_res = sub_ctx.with_path("key", |k_ctx| {
                         entry_input.with_index(0, &mut |k_in| {
                             self.key_type.validate_with_context(k_ctx, k_in)
@@ -75,7 +74,6 @@ impl RodValidator for RodMap {
                         return Err(());
                     }
 
-                    // Validate Value (Index 1)
                     let val_res = sub_ctx.with_path("value", |v_ctx| {
                         entry_input.with_index(1, &mut |v_in| {
                             self.value_type.validate_with_context(v_ctx, v_in)
@@ -86,19 +84,14 @@ impl RodValidator for RodMap {
                         return Err(());
                     }
 
-                    // Extract values
-                    // Safe unwrap because we checked errors
                     let k = key_res.unwrap().unwrap();
                     let v = val_res.unwrap().unwrap();
 
-                    // FIX: Return RodValue to satisfy with_index signature
                     Ok(RodValue::Array(vec![k, v]))
                 })
             });
 
-            // Flatten Option<Option<Result>>
             if let Some(Ok(RodValue::Array(mut items))) = entry_result {
-                // Unpack the vec to push to valid_entries
                 if items.len() == 2 {
                     let v = items.pop().unwrap();
                     let k = items.pop().unwrap();
@@ -118,9 +111,9 @@ impl RodValidator for RodMap {
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
         use crate::types::optional::OptionalExtension;
-        let partial_key = self.key_type.deep_partial_boxed();
-        let partial_value = self.value_type.deep_partial_boxed();
-        Box::new(RodMap::new(partial_key, partial_value).optional())
+        let partial_key = wrap_custom(self.key_type.deep_partial_boxed());
+        let partial_value = wrap_custom(self.value_type.deep_partial_boxed());
+        Box::new(RodMap::new(partial_key.into_node(), partial_value.into_node()).optional())
     }
 
     fn clone_box(&self) -> Box<dyn RodValidator> {
@@ -128,6 +121,6 @@ impl RodValidator for RodMap {
     }
 }
 
-pub fn map(key: impl RodValidator + 'static, value: impl RodValidator + 'static) -> RodMap {
-    RodMap::new(Box::new(key), Box::new(value))
+pub fn map<K: IntoRodNode, V: IntoRodNode>(key: K, value: V) -> RodMap {
+    RodMap::new(key.into_node(), value.into_node())
 }

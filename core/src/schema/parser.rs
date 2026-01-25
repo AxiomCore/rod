@@ -1,19 +1,20 @@
 use crate::core::validator::RodValidator;
-// Explicitly import factory functions to avoid module name clashes
-use crate::types::array::array;
-use crate::types::boolean::boolean;
-use crate::types::date::date;
-use crate::types::discriminated_union::discriminated_union_map;
-use crate::types::literal::literal;
-use crate::types::map::map;
-use crate::types::number::number;
-use crate::types::object::object;
-use crate::types::primitive::{any, never};
-use crate::types::record::record;
-use crate::types::set::set;
-use crate::types::string::string;
-use crate::types::tuple::tuple;
-use crate::types::union::union;
+use crate::types::array::RodArray;
+use crate::types::boolean::RodBoolean;
+use crate::types::date::RodDate;
+use crate::types::discriminated_union::RodDiscriminatedUnion;
+use crate::types::enum_type::RodEnum;
+use crate::types::literal::RodLiteral;
+use crate::types::map::RodMap;
+use crate::types::node::RodNode;
+use crate::types::number::RodNumber;
+use crate::types::object::RodObject;
+use crate::types::primitive::{RodAny, RodNever};
+use crate::types::record::RodRecord;
+use crate::types::set::RodSet;
+use crate::types::string::RodString;
+use crate::types::tuple::RodTuple;
+use crate::types::union::RodUnion;
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -105,17 +106,18 @@ impl RodSpec {
         }
     }
 
-    pub fn build(&self) -> Box<dyn RodValidator> {
+    /// Recursively builds the schema into a optimized RodNode tree.
+    pub fn build_node(&self) -> RodNode {
         match self {
             RodSpec::Date { min, max } => {
-                let mut d = date();
+                let mut d = RodDate::new();
                 if let Some(v) = min {
                     d = d.min(*v);
                 }
                 if let Some(v) = max {
                     d = d.max(*v);
                 }
-                Box::new(d)
+                RodNode::Date(d)
             }
             RodSpec::String {
                 min,
@@ -133,7 +135,7 @@ impl RodSpec {
                 includes,
                 trim,
             } => {
-                let mut s = string();
+                let mut s = RodString::new();
                 if let Some(v) = min {
                     s = s.min(*v);
                 }
@@ -176,10 +178,10 @@ impl RodSpec {
                 if *trim {
                     s = s.trim();
                 }
-                Box::new(s)
+                RodNode::String(s)
             }
             RodSpec::Number { min, max, int } => {
-                let mut n = number();
+                let mut n = RodNumber::new();
                 if let Some(v) = min {
                     n = n.min(*v);
                 }
@@ -189,51 +191,55 @@ impl RodSpec {
                 if int.unwrap_or(false) {
                     n = n.int();
                 }
-                Box::new(n)
+                RodNode::Number(n)
             }
-            RodSpec::Boolean => Box::new(boolean()),
-            RodSpec::Any => Box::new(any()),
-            RodSpec::Never => Box::new(never()),
+            RodSpec::Boolean => RodNode::Boolean(RodBoolean::default()),
+            RodSpec::Any => RodNode::Any(RodAny::default()),
+            RodSpec::Never => RodNode::Never(RodNever::default()),
             RodSpec::Array { items, min, max } => {
-                let mut a = array(items.build());
+                let mut a = RodArray::new(items.build_node());
                 if let Some(v) = min {
                     a = a.min(*v);
                 }
                 if let Some(v) = max {
                     a = a.max(*v);
                 }
-                Box::new(a)
+                RodNode::Array(a)
             }
             RodSpec::Object { properties, strict } => {
                 let mut map = HashMap::new();
                 for (k, v) in properties {
-                    map.insert(k.clone(), v.build());
+                    map.insert(k.clone(), v.build_node());
                 }
-                let mut obj = object(map);
+                let mut obj = RodObject::new(map);
                 if strict.unwrap_or(false) {
                     obj = obj.strict();
                 } else {
                     obj = obj.strip();
                 }
-                Box::new(obj)
+                RodNode::Object(obj)
             }
-            RodSpec::Union { options } => {
-                Box::new(union(options.iter().map(|o| o.build()).collect()))
+            RodSpec::Union { options } => RodNode::Union(RodUnion::new(
+                options.iter().map(|o| o.build_node()).collect(),
+            )),
+            RodSpec::Literal { value } => RodNode::Literal(RodLiteral::new(value.clone())),
+            RodSpec::Enum { values } => RodNode::Enum(RodEnum::new(values.clone())),
+            RodSpec::Tuple { items } => RodNode::Tuple(RodTuple::new(
+                items.iter().map(|i| i.build_node()).collect(),
+            )),
+            RodSpec::Record { key, value } => {
+                RodNode::Record(RodRecord::new(key.build_node(), value.build_node()))
             }
-            RodSpec::Literal { value } => Box::new(literal(value.clone())),
-            RodSpec::Enum { values } => {
-                Box::new(crate::types::enum_type::RodEnum::new(values.clone()))
-            }
-            RodSpec::Tuple { items } => Box::new(tuple(items.iter().map(|i| i.build()).collect())),
-            RodSpec::Record { key, value } => Box::new(record(key.build(), value.build())),
             RodSpec::Set { value, min } => {
-                let mut s = set(value.build());
+                let mut s = RodSet::new(value.build_node());
                 if let Some(v) = min {
                     s = s.min(*v);
                 }
-                Box::new(s)
+                RodNode::Set(s)
             }
-            RodSpec::Map { key, value } => Box::new(map(key.build(), value.build())),
+            RodSpec::Map { key, value } => {
+                RodNode::Map(RodMap::new(key.build_node(), value.build_node()))
+            }
             RodSpec::DiscriminatedUnion {
                 discriminator,
                 options,
@@ -241,14 +247,17 @@ impl RodSpec {
                 let mut map = HashMap::new();
                 for opt in options {
                     if let Some(val) = opt.find_discriminator_value(discriminator) {
-                        map.insert(val, opt.build());
-                    } else {
-                        // For simplicity in parser, assume spec is correct or ignore
+                        map.insert(val, opt.build_node());
                     }
                 }
-                Box::new(discriminated_union_map(discriminator.clone(), map))
+                RodNode::DiscriminatedUnion(RodDiscriminatedUnion::new(discriminator.clone(), map))
             }
         }
+    }
+
+    /// Legacy support returning a boxed trait object.
+    pub fn build(&self) -> Box<dyn RodValidator> {
+        Box::new(self.build_node())
     }
 }
 

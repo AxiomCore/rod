@@ -2,6 +2,7 @@ use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
 use crate::error::{RodIssueCode, ValidationContext};
+use crate::types::node::{IntoRodNode, RodNode};
 use std::fmt;
 
 // --- Refine ---
@@ -11,7 +12,7 @@ pub struct RodRefine<F>
 where
     F: for<'v> Fn(&RodValue<'v>) -> Result<(), String> + Send + Sync + Clone,
 {
-    schema: Box<dyn RodValidator>,
+    schema: Box<RodNode>,
     check: F,
 }
 
@@ -31,8 +32,11 @@ impl<F> RodRefine<F>
 where
     F: for<'v> Fn(&RodValue<'v>) -> Result<(), String> + Send + Sync + Clone,
 {
-    pub fn new(schema: Box<dyn RodValidator>, check: F) -> Self {
-        Self { schema, check }
+    pub fn new(schema: RodNode, check: F) -> Self {
+        Self {
+            schema: Box::new(schema),
+            check,
+        }
     }
 }
 
@@ -45,10 +49,8 @@ where
         ctx: &mut ValidationContext,
         input: &dyn RodInput<'a>,
     ) -> Result<RodValue<'a>, ()> {
-        // Validate Inner
         let val = self.schema.validate_with_context(ctx, input)?;
 
-        // Check on RodValue (Zero Copy)
         if let Err(msg) = (self.check)(&val) {
             ctx.add_issue(
                 RodIssueCode::Custom {
@@ -76,10 +78,9 @@ where
 #[derive(Clone)]
 pub struct RodTransform<F>
 where
-    // CHANGED: Transformer now receives RodValue to allow lazy/zero-copy transformations
     F: Fn(RodValue) -> RodValue + Send + Sync + Clone,
 {
-    schema: Box<dyn RodValidator>,
+    schema: Box<RodNode>,
     transformer: F,
 }
 
@@ -99,9 +100,9 @@ impl<F> RodTransform<F>
 where
     F: Fn(RodValue) -> RodValue + Send + Sync + Clone,
 {
-    pub fn new(schema: Box<dyn RodValidator>, transformer: F) -> Self {
+    pub fn new(schema: RodNode, transformer: F) -> Self {
         Self {
-            schema,
+            schema: Box::new(schema),
             transformer,
         }
     }
@@ -117,9 +118,6 @@ where
         input: &dyn RodInput<'a>,
     ) -> Result<RodValue<'a>, ()> {
         let val = self.schema.validate_with_context(ctx, input)?;
-
-        // Transform value.
-        // We assume transformer returns a value valid for 'a or 'static.
         Ok((self.transformer)(val))
     }
 
@@ -134,18 +132,23 @@ where
 
 // --- Helpers ---
 
-pub fn refine<V, F>(validator: V, check: F) -> RodRefine<F>
+// UPDATED: Now returns RodNode directly to allow nesting in other effects/containers
+pub fn refine<V, F>(validator: V, check: F) -> RodNode
 where
-    V: RodValidator + 'static,
+    V: IntoRodNode + 'static,
     F: for<'v> Fn(&RodValue<'v>) -> Result<(), String> + Send + Sync + Clone + 'static,
 {
-    RodRefine::new(Box::new(validator), check)
+    RodNode::Custom(Box::new(RodRefine::new(validator.into_node(), check)))
 }
 
-pub fn transform<V, F>(validator: V, transformer: F) -> RodTransform<F>
+// UPDATED: Now returns RodNode directly
+pub fn transform<V, F>(validator: V, transformer: F) -> RodNode
 where
-    V: RodValidator + 'static,
+    V: IntoRodNode + 'static,
     F: Fn(RodValue) -> RodValue + Send + Sync + Clone + 'static,
 {
-    RodTransform::new(Box::new(validator), transformer)
+    RodNode::Custom(Box::new(RodTransform::new(
+        validator.into_node(),
+        transformer,
+    )))
 }

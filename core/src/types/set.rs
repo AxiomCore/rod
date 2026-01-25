@@ -2,19 +2,20 @@ use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
 use crate::error::{RodIssueCode, ValidationContext};
+use crate::types::node::{IntoRodNode, RodNode, wrap_custom};
 use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
 pub struct RodSet {
-    value_type: Box<dyn RodValidator>,
+    value_type: Box<RodNode>,
     min: Option<usize>,
     max: Option<usize>,
 }
 
 impl RodSet {
-    pub fn new(value_type: Box<dyn RodValidator>) -> Self {
+    pub fn new(value_type: RodNode) -> Self {
         Self {
-            value_type,
+            value_type: Box::new(value_type),
             min: None,
             max: None,
         }
@@ -78,7 +79,6 @@ impl RodValidator for RodSet {
         for i in 0..len {
             let item_res = ctx.with_index(i, |sub_ctx| {
                 input.with_index(i, &mut |item_input| {
-                    // Uniqueness Check via JSON string
                     let s = item_input.to_json().to_string();
                     if !seen.insert(s) {
                         sub_ctx.add_issue(
@@ -89,6 +89,7 @@ impl RodValidator for RodSet {
                             "Items must be unique".into(),
                         );
                     }
+                    // STATIC DISPATCH
                     self.value_type.validate_with_context(sub_ctx, item_input)
                 })
             });
@@ -109,8 +110,8 @@ impl RodValidator for RodSet {
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
         use crate::types::optional::OptionalExtension;
-        let partial_value = self.value_type.deep_partial_boxed();
-        Box::new(RodSet::new(partial_value).optional())
+        let partial_value = wrap_custom(self.value_type.deep_partial_boxed());
+        Box::new(RodSet::new(partial_value.into_node()).optional())
     }
 
     fn clone_box(&self) -> Box<dyn RodValidator> {
@@ -118,6 +119,6 @@ impl RodValidator for RodSet {
     }
 }
 
-pub fn set(schema: impl RodValidator + 'static) -> RodSet {
-    RodSet::new(Box::new(schema))
+pub fn set<T: IntoRodNode>(schema: T) -> RodSet {
+    RodSet::new(schema.into_node())
 }

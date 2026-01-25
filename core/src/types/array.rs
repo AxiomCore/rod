@@ -2,18 +2,19 @@ use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
 use crate::error::{RodIssueCode, ValidationContext};
+use crate::types::node::{IntoRodNode, RodNode};
 
 #[derive(Debug, Clone)]
 pub struct RodArray {
-    schema: Box<dyn RodValidator>,
+    pub schema: Box<RodNode>,
     min: Option<usize>,
     max: Option<usize>,
 }
 
 impl RodArray {
-    pub fn new(schema: Box<dyn RodValidator>) -> Self {
+    pub fn new<T: IntoRodNode>(schema: T) -> Self {
         Self {
-            schema,
+            schema: Box::new(schema.into_node()),
             min: None,
             max: None,
         }
@@ -72,6 +73,7 @@ impl RodValidator for RodArray {
             for i in 0..len {
                 let item_res = ctx.with_index(i, |sub_ctx| {
                     input.with_index(i, &mut |item_input| {
+                        // HYBRID DISPATCH: Calling validate on RodNode enum variant
                         self.schema.validate_with_context(sub_ctx, item_input)
                     })
                 });
@@ -102,8 +104,16 @@ impl RodValidator for RodArray {
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
         use crate::types::optional::OptionalExtension;
+        // Since deep_partial_boxed returns Box<dyn Validator>, we lose static info here during recursion logic.
+        // The resulting array will contain a Custom(Box<dyn>) node.
+        // This is acceptable for 'partial' schemas which are less performance critical than the main schema.
         let partial_item = self.schema.deep_partial_boxed();
-        Box::new(RodArray::new(partial_item).optional())
+
+        // We need to wrap the boxed validator into a Node::Custom to create a RodArray
+        let node = crate::types::node::wrap_custom(partial_item);
+
+        // Return Array<Custom> wrapped in Optional
+        Box::new(RodArray::new(node).optional())
     }
 
     fn clone_box(&self) -> Box<dyn RodValidator> {
@@ -111,6 +121,6 @@ impl RodValidator for RodArray {
     }
 }
 
-pub fn array(schema: impl RodValidator + 'static) -> RodArray {
-    RodArray::new(Box::new(schema))
+pub fn array<T: IntoRodNode>(schema: T) -> RodArray {
+    RodArray::new(schema)
 }

@@ -18,6 +18,7 @@ pub use types::intersection::intersection;
 pub use types::lazy::lazy;
 pub use types::literal::literal;
 pub use types::map::map;
+pub use types::node::{IntoRodNode, RodNode}; // Added node exports
 pub use types::nullable::NullableExtension;
 pub use types::number::number;
 pub use types::object::object;
@@ -37,28 +38,31 @@ pub use core::validator::RodValidator;
 pub use core::value::RodValue;
 pub use schema::parser::from_yaml;
 
+/// Parse a Rod schema from YAML and return the optimized RodNode.
+pub fn from_yaml_node(content: &str) -> Result<RodNode, serde_yaml::Error> {
+    let spec: schema::parser::RodSpec = serde_yaml::from_str(content)?;
+    Ok(spec.build_node())
+}
+
 // Coercion Helpers (z.coerce)
 pub mod coerce {
     use super::*;
     use crate::core::input::{DataType, RodInput};
     use serde_json::{Value, json};
 
-    pub fn string() -> impl RodValidator {
+    pub fn string() -> RodNode {
         preprocess(
-            |v: &dyn RodInput| {
-                match v.get_type() {
-                    DataType::String => Value::String(v.as_str().unwrap().to_string()),
-                    DataType::Number => Value::String(v.as_f64().unwrap().to_string()),
-                    DataType::Boolean => Value::String(v.as_bool().unwrap().to_string()),
-                    // Fallback to JSON clone if not simple primitive
-                    _ => v.to_json(),
-                }
+            |v: &dyn RodInput| match v.get_type() {
+                DataType::String => Value::String(v.as_str().unwrap().to_string()),
+                DataType::Number => Value::String(v.as_f64().unwrap().to_string()),
+                DataType::Boolean => Value::String(v.as_bool().unwrap().to_string()),
+                _ => v.to_json(),
             },
             crate::types::string::string(),
         )
     }
 
-    pub fn number() -> impl RodValidator {
+    pub fn number() -> RodNode {
         preprocess(
             |v: &dyn RodInput| match v.get_type() {
                 DataType::Number => {
@@ -87,7 +91,7 @@ pub mod coerce {
         )
     }
 
-    pub fn boolean() -> impl RodValidator {
+    pub fn boolean() -> RodNode {
         preprocess(
             |v: &dyn RodInput| match v.get_type() {
                 DataType::String => {
@@ -105,7 +109,7 @@ pub mod coerce {
     }
 }
 
-// Helper for type name inspection (useful for error messages)
+// Helper for type name inspection
 pub fn get_type_name(v: &Value) -> String {
     match v {
         Value::Null => "null",

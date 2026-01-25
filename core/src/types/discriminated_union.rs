@@ -2,16 +2,17 @@ use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
 use crate::error::{RodIssueCode, ValidationContext};
+use crate::types::node::{IntoRodNode, RodNode};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct RodDiscriminatedUnion {
     discriminator: String,
-    options: HashMap<String, Box<dyn RodValidator>>,
+    options: HashMap<String, RodNode>,
 }
 
 impl RodDiscriminatedUnion {
-    pub fn new(discriminator: String, options: HashMap<String, Box<dyn RodValidator>>) -> Self {
+    pub fn new(discriminator: String, options: HashMap<String, RodNode>) -> Self {
         Self {
             discriminator,
             options,
@@ -36,18 +37,13 @@ impl RodValidator for RodDiscriminatedUnion {
             return Err(());
         }
 
-        // Use with_key to get discriminator
-        let disc_val_opt = input.with_key(&self.discriminator, &mut |disc_input| {
-            // We need to return the value to decide which schema to use.
-            // But with_key expects Result<RodValue>.
-            // We return the extracted string as RodValue::String for processing.
-            match disc_input.as_str() {
-                Some(s) => Ok(RodValue::String(s)),
-                None => Err(()), // Signal failure to extract string
-            }
+        let disc_val_opt = input.with_key(&self.discriminator, &mut |disc_input| match disc_input
+            .as_str()
+        {
+            Some(s) => Ok(RodValue::String(s)),
+            None => Err(()),
         });
 
-        // Flatten Option<Result<RodValue>>
         let disc_cow = match disc_val_opt {
             Some(Ok(RodValue::String(s))) => s,
             _ => {
@@ -60,6 +56,7 @@ impl RodValidator for RodDiscriminatedUnion {
         };
 
         if let Some(validator) = self.options.get(disc_cow.as_ref()) {
+            // STATIC DISPATCH
             return validator.validate_with_context(ctx, input);
         }
 
@@ -82,20 +79,20 @@ impl RodValidator for RodDiscriminatedUnion {
     }
 }
 
-pub fn discriminated_union(
+pub fn discriminated_union<T: IntoRodNode>(
     discriminator: &str,
-    options: Vec<(&str, Box<dyn RodValidator>)>,
+    options: Vec<(&str, T)>,
 ) -> RodDiscriminatedUnion {
     let mut map = HashMap::new();
     for (value, validator) in options {
-        map.insert(value.to_string(), validator);
+        map.insert(value.to_string(), validator.into_node());
     }
     RodDiscriminatedUnion::new(discriminator.to_string(), map)
 }
 
 pub fn discriminated_union_map(
     discriminator: String,
-    options: HashMap<String, Box<dyn RodValidator>>,
+    options: HashMap<String, RodNode>,
 ) -> RodDiscriminatedUnion {
     RodDiscriminatedUnion::new(discriminator, options)
 }

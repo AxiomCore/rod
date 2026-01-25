@@ -6,9 +6,6 @@ use serde_json::json;
 
 #[test]
 fn test_macro_object() {
-    // Note: 'array' needs to be imported if used inside macro,
-    // but the macro expands to `rod::types::object::object`, so imports matter.
-    // Let's import array here.
     use rod::array;
 
     let schema = rod_obj! {
@@ -46,7 +43,7 @@ fn test_record() {
             .validate(&wrap(&json!({ "score": 10, "hp": 100 })))
             .is_ok()
     );
-    assert!(schema.validate(&wrap(&json!({ "a": 1 }))).is_err()); // Key too short
+    assert!(schema.validate(&wrap(&json!({ "a": 1 }))).is_err());
 }
 
 #[test]
@@ -91,10 +88,10 @@ fn test_optional_nullable() {
         schema
             .validate(&wrap(&json!({ "req": "a", "null": null })))
             .is_ok()
-    ); // opt missing is ok
+    );
     assert!(
         schema
             .validate(&wrap(&json!({ "opt": "b", "null": "c" })))
             .is_err()
-    ); // req missing
+    );
 }

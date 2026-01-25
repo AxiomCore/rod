@@ -3,6 +3,7 @@ use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
 use crate::error::{RodIssueCode, ValidationContext};
 use crate::types::enum_type::{RodEnum, enum_type};
+use crate::types::node::{IntoRodNode, RodNode};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -15,7 +16,8 @@ pub enum UnknownKeys {
 
 #[derive(Clone)]
 pub struct RodObject {
-    shape: HashMap<String, Box<dyn RodValidator>>,
+    // UPDATED: Holds strong types
+    shape: HashMap<String, RodNode>,
     unknown_keys: UnknownKeys,
 }
 
@@ -28,12 +30,22 @@ impl std::fmt::Debug for RodObject {
     }
 }
 impl RodObject {
-    pub fn new(shape: HashMap<String, Box<dyn RodValidator>>) -> Self {
+    pub fn new(shape: HashMap<String, RodNode>) -> Self {
         Self {
             shape,
             unknown_keys: UnknownKeys::Strip,
         }
     }
+
+    // Legacy support: Convert map of trait objects to map of Nodes
+    pub fn from_validators<T: IntoRodNode>(map: HashMap<String, T>) -> Self {
+        let mut shape = HashMap::new();
+        for (k, v) in map {
+            shape.insert(k, v.into_node());
+        }
+        Self::new(shape)
+    }
+
     pub fn strict(mut self) -> Self {
         self.unknown_keys = UnknownKeys::Strict;
         self
@@ -55,7 +67,11 @@ impl RodObject {
     pub fn deep_partial(self) -> RodObject {
         let mut new_shape = HashMap::new();
         for (key, validator) in self.shape {
-            new_shape.insert(key, validator.deep_partial_boxed());
+            // Wrap the partial result (Box<dyn>) into Node::Custom
+            new_shape.insert(
+                key,
+                crate::types::node::wrap_custom(validator.deep_partial_boxed()),
+            );
         }
         RodObject {
             shape: new_shape,
@@ -75,10 +91,9 @@ impl RodValidator for RodObject {
 
             // 1. Validate Shape
             for (key, validator) in &self.shape {
-                // FIX: Use with_owned_path (clone key) to avoid lifetime issues
-                // between self (schema) and ctx (ephemeral).
                 let result_op = ctx.with_owned_path(key.clone(), |sub_ctx| {
                     input.with_key(key, &mut |child_input| {
+                        // HYBRID DISPATCH
                         validator.validate_with_context(sub_ctx, child_input)
                     })
                 });
@@ -94,7 +109,6 @@ impl RodValidator for RodObject {
                     }
                     None => {
                         if !validator.is_optional() {
-                            // FIX: Use with_owned_path for error reporting too
                             ctx.with_owned_path(key.clone(), |sub_ctx| {
                                 sub_ctx.add_issue(
                                     RodIssueCode::InvalidType {
@@ -109,9 +123,7 @@ impl RodValidator for RodObject {
                 }
             }
 
-            // 2. Handle Unknown Keys
-            // OPTIMIZATION: Only pay the cost of iterating keys if we actually care about them.
-            // If UnknownKeys::Strip (default), we do nothing with extra keys, so we skip this entirely.
+            // 2. Handle Unknown Keys (Optimized Check)
             if self.unknown_keys != UnknownKeys::Strip {
                 if let Some(keys_iter) = input.keys() {
                     for key in keys_iter {
@@ -137,7 +149,7 @@ impl RodValidator for RodObject {
                                         output.push((key, v));
                                     }
                                 }
-                                UnknownKeys::Strip => {} // Should not be reached
+                                UnknownKeys::Strip => {}
                             }
                         }
                     }
@@ -172,5 +184,10 @@ impl RodValidator for RodObject {
 }
 
 pub fn object(shape: HashMap<String, Box<dyn RodValidator>>) -> RodObject {
-    RodObject::new(shape)
+    // Helper to wrap generic map into RodNodes for backward compatibility
+    let mut node_shape = HashMap::new();
+    for (k, v) in shape {
+        node_shape.insert(k, crate::types::node::wrap_custom(v));
+    }
+    RodObject::new(node_shape)
 }
