@@ -10,6 +10,13 @@ pub fn main() {
     console_error_panic_hook::set_once();
 }
 
+fn make_err_obj(code: &str, msg: &str) -> JsValue {
+    let obj = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&obj, &"code".into(), &code.into());
+    let _ = js_sys::Reflect::set(&obj, &"message".into(), &msg.into());
+    obj.into()
+}
+
 #[wasm_bindgen]
 pub struct RodSchema {
     validator: Box<dyn RodValidator>,
@@ -20,7 +27,7 @@ impl RodSchema {
     #[wasm_bindgen(constructor)]
     pub fn new(spec_json: JsValue) -> Result<RodSchema, JsValue> {
         let spec: RodSpec = serde_wasm_bindgen::from_value(spec_json)
-            .map_err(|e| JsValue::from_str(&format!("Invalid spec: {}", e)))?;
+            .map_err(|e| make_err_obj("InvalidSpec", &format!("{}", e)))?;
         Ok(RodSchema {
             validator: spec.build(),
         })
@@ -60,7 +67,7 @@ impl RodSchema {
     pub fn check_batch_eager(&self, collection: JsValue) -> Result<js_sys::Uint8Array, JsValue> {
         // One-time bulk serialization (The only bridge cost we pay)
         let data: Vec<serde_json::Value> = serde_wasm_bindgen::from_value(collection)
-            .map_err(|e| JsValue::from_str(&format!("Bulk serialization failed: {}", e)))?;
+            .map_err(|e| make_err_obj("SerializationError", &format!("{}", e)))?;
 
         let len = data.len();
         let mut mask = vec![0u8; len];
@@ -155,7 +162,7 @@ impl RodSchema {
 
     pub fn validate_eager(&self, data: JsValue) -> Result<JsValue, JsValue> {
         let json_data: serde_json::Value = serde_wasm_bindgen::from_value(data)
-            .map_err(|e| JsValue::from_str(&format!("Failed to serialize: {}", e)))?;
+            .map_err(|e| make_err_obj("SerializationError", &format!("{}", e)))?;
 
         let input = wrap(&json_data);
         let res = match self.validator.validate(&input) {

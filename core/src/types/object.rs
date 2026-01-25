@@ -110,30 +110,35 @@ impl RodValidator for RodObject {
             }
 
             // 2. Handle Unknown Keys
-            if let Some(keys_iter) = input.keys() {
-                for key in keys_iter {
-                    if !self.shape.contains_key(key.as_ref()) {
-                        match self.unknown_keys {
-                            UnknownKeys::Strict => {
-                                ctx.with_owned_path(key.to_string(), |sub_ctx| {
-                                    sub_ctx.add_issue(
-                                        RodIssueCode::UnrecognizedKeys {
-                                            keys: vec![key.to_string()],
-                                        },
-                                        format!("Unrecognized key: '{}'", key),
-                                    );
-                                });
-                            }
-                            UnknownKeys::Passthrough => {
-                                let val_lazy = input.with_key(key.as_ref(), &mut |field_input| {
-                                    Ok(RodValue::Lazy(field_input.clone_box()))
-                                });
-
-                                if let Some(Ok(v)) = val_lazy {
-                                    output.push((key, v));
+            // OPTIMIZATION: Only pay the cost of iterating keys if we actually care about them.
+            // If UnknownKeys::Strip (default), we do nothing with extra keys, so we skip this entirely.
+            if self.unknown_keys != UnknownKeys::Strip {
+                if let Some(keys_iter) = input.keys() {
+                    for key in keys_iter {
+                        if !self.shape.contains_key(key.as_ref()) {
+                            match self.unknown_keys {
+                                UnknownKeys::Strict => {
+                                    ctx.with_owned_path(key.to_string(), |sub_ctx| {
+                                        sub_ctx.add_issue(
+                                            RodIssueCode::UnrecognizedKeys {
+                                                keys: vec![key.to_string()],
+                                            },
+                                            format!("Unrecognized key: '{}'", key),
+                                        );
+                                    });
                                 }
+                                UnknownKeys::Passthrough => {
+                                    let val_lazy =
+                                        input.with_key(key.as_ref(), &mut |field_input| {
+                                            Ok(RodValue::Lazy(field_input.clone_box()))
+                                        });
+
+                                    if let Some(Ok(v)) = val_lazy {
+                                        output.push((key, v));
+                                    }
+                                }
+                                UnknownKeys::Strip => {} // Should not be reached
                             }
-                            UnknownKeys::Strip => {}
                         }
                     }
                 }

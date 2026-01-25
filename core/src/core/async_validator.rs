@@ -13,7 +13,8 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 
 /// Async validation trait.
-/// Inherits RodThreadBounds to ensure Send/Sync in native Rust environments.
+/// Inherits RodThreadBounds to ensure Send/Sync in native Rust environments (Actix/Axum),
+/// but allows !Send in WASM via the feature flag.
 pub trait AsyncRodValidator: 'static + RodThreadBounds {
     fn validate_async<'a>(
         &'a self,
@@ -27,6 +28,7 @@ impl<T: RodValidator + ?Sized + 'static> AsyncRodValidator for T {
         &'a self,
         input: &'a dyn RodInput<'a>,
     ) -> BoxFuture<'a, Result<RodValue<'a>, Vec<RodIssue>>> {
+        // Since T is RodValidator, it is also RodThreadBounds, satisfying the trait constraint.
         let mut ctx = ValidationContext::new();
         let result = self.validate_with_context(&mut ctx, input);
 
@@ -47,6 +49,7 @@ pub struct AsyncRefine<F> {
 
 impl<F> AsyncRefine<F>
 where
+    // Ensure the check closure also respects threading bounds
     F: for<'v, 'd> Fn(&'v RodValue<'d>) -> BoxFuture<'v, Result<(), String>>
         + 'static
         + RodThreadBounds,

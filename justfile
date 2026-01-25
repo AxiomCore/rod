@@ -27,7 +27,7 @@ build-js:
 
 # Build and install the Python extension into the local .venv
 build-python: setup-python
-    cd languages/python && ../../.venv/bin/maturin develop
+    cd languages/python && ../../.venv/bin/maturin develop --release
 
 # --- Benchmark Commands ---
 
@@ -46,6 +46,8 @@ bench-python: build-python
 	@.venv/bin/pip install -r languages/python/bench/requirements.txt -q
 	@echo "📊 Running benchmarks..."
 	@.venv/bin/python languages/python/bench/main.py
+
+bench-all: bench-rust bench-js bench-python
 
 # --- Test Commands ---
 

@@ -1,9 +1,10 @@
+mod py_input;
+use py_input::PyInput;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pythonize::{depythonize, pythonize};
 use rod::core::validator::RodValidator;
-use rod::io::json::wrap;
 use rod::schema::parser::RodSpec;
 
 #[pyclass(unsendable)]
@@ -23,23 +24,23 @@ impl RodSchema {
     }
 
     fn validate(&self, data: &Bound<'_, PyAny>) -> PyResult<PyObject> {
-        // 1. Convert input Python data to serde_json::Value
-        let json_data: serde_json::Value = depythonize(data)
-            .map_err(|e| PyValueError::new_err(format!("Failed to parse input data: {}", e)))?;
+        // 1. Create Zero-Copy Adapter
+        // This wraps the Python object directly without serialization
+        let input = PyInput(data.clone());
 
-        // 2. Create adapter
-        let input = wrap(&json_data);
+        // 2. VALIDATION logic
+        // Validation now happens directly against Python memory layout
+        let validation_result = self.validator.validate(&input);
 
-        // 3. VALIDATION logic - FIX: Map to owned JSON immediately to break the borrow
-        // This ensures the references to `json_data` are gone before we continue
-        let validation_result = self
-            .validator
-            .validate(&input)
-            .map(|rod_val| rod_val.to_json());
-
-        // 4. Handle result
+        // 3. Handle result
         match validation_result {
-            Ok(result_json) => {
+            Ok(rod_val) => {
+                // If validation passed, we convert the result back to Python.
+                // Note: For pure passthrough (lazy) values, to_json() will trigger
+                // depythonize() internally. We pay the serialization cost only on success
+                // and only for the returned data, not for the validation process itself.
+                let result_json = rod_val.to_json();
+
                 let py = data.py();
                 pythonize(py, &result_json)
                     .map(|bound| bound.unbind())
