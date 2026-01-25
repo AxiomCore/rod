@@ -11,7 +11,7 @@ use serde_json::Value;
 pub use types::array::array;
 pub use types::boolean::boolean;
 pub use types::date::date;
-pub use types::discriminated_union::{discriminated_union, discriminated_union_map};
+pub use types::discriminated_union::discriminated_union;
 pub use types::effect::{refine, transform};
 pub use types::enum_type::enum_type;
 pub use types::intersection::intersection;

@@ -1,5 +1,5 @@
 use crate::core::input::RodInput;
-use crate::core::validator::RodValidator;
+use crate::core::validator::{DynValidator, RodValidator};
 use crate::core::value::RodValue;
 use crate::error::ValidationContext;
 
@@ -24,9 +24,11 @@ use crate::types::string::RodString;
 use crate::types::tuple::RodTuple;
 use crate::types::union::RodUnion;
 
-/// The central node enum for static dispatch optimization.
-/// By wrapping all concrete types here, we allow the compiler to monomorphize
-/// validation logic and inline calls, avoiding vtable overhead.
+/// The central node enum for hybrid dispatch optimization.
+///
+/// In Phase 3, this enum implements the generic RodValidator trait,
+/// enabling the Rust compiler to generate specialized validation code
+/// for specific binding inputs (Python, WASM, JSON).
 #[derive(Debug, Clone)]
 pub enum RodNode {
     String(RodString),
@@ -50,15 +52,40 @@ pub enum RodNode {
     Never(RodNever),
     Lazy(RodLazy),
 
-    // Fallback for user-defined or complex validators that don't fit the enum
-    Custom(Box<dyn RodValidator>),
+    /// Fallback for user-defined validators.
+    /// These use the "Slow Path" (Dynamic Dispatch via validate_dyn).
+    Custom(Box<dyn DynValidator>),
 }
 
-impl RodValidator for RodNode {
-    fn validate_with_context<'a>(
+impl DynValidator for RodNode {
+    fn validate_dyn<'a>(
         &self,
         ctx: &mut ValidationContext,
         input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
+        // Bridge: Use the Sized wrapper to call the monomorphized path
+        let wrapper = crate::core::input::BoxedInput(input);
+        self.validate_with_context(ctx, &wrapper)
+    }
+
+    fn is_optional_dyn(&self) -> bool {
+        self.is_optional()
+    }
+    fn deep_partial_dyn(&self) -> Box<dyn DynValidator> {
+        self.deep_partial_boxed()
+    }
+    fn clone_dyn(&self) -> Box<dyn DynValidator> {
+        self.clone_box()
+    }
+}
+
+impl RodValidator for RodNode {
+    /// Specialized validation. The compiler will generate a separate
+    /// machine code path for every concrete Input type 'I'.
+    fn validate_with_context<'a, I: RodInput<'a>>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &I,
     ) -> Result<RodValue<'a>, ()> {
         match self {
             RodNode::String(v) => v.validate_with_context(ctx, input),
@@ -81,20 +108,21 @@ impl RodValidator for RodNode {
             RodNode::Any(v) => v.validate_with_context(ctx, input),
             RodNode::Never(v) => v.validate_with_context(ctx, input),
             RodNode::Lazy(v) => v.validate_with_context(ctx, input),
-            RodNode::Custom(v) => v.validate_with_context(ctx, input),
+
+            // BRIDGE: Type erasure happens here for custom validators
+            RodNode::Custom(v) => v.validate_dyn(ctx, input),
         }
     }
 
     fn is_optional(&self) -> bool {
         match self {
             RodNode::Optional(_) => true,
-            RodNode::Custom(v) => v.is_optional(),
-            // All other types are required by default
+            RodNode::Custom(v) => v.is_optional_dyn(),
             _ => false,
         }
     }
 
-    fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
+    fn deep_partial_boxed(&self) -> Box<dyn DynValidator> {
         match self {
             RodNode::String(v) => v.deep_partial_boxed(),
             RodNode::Number(v) => v.deep_partial_boxed(),
@@ -116,17 +144,16 @@ impl RodValidator for RodNode {
             RodNode::Any(v) => v.deep_partial_boxed(),
             RodNode::Never(v) => v.deep_partial_boxed(),
             RodNode::Lazy(v) => v.deep_partial_boxed(),
-            RodNode::Custom(v) => v.deep_partial_boxed(),
+            RodNode::Custom(v) => v.deep_partial_dyn(),
         }
     }
 
-    fn clone_box(&self) -> Box<dyn RodValidator> {
+    fn clone_box(&self) -> Box<dyn DynValidator> {
         Box::new(self.clone())
     }
 }
 
 /// Helper trait to convert any validator into a RodNode.
-/// This allows the factory functions (rod::string, rod::array) to work seamlessly.
 pub trait IntoRodNode {
     fn into_node(self) -> RodNode;
 }
@@ -238,15 +265,7 @@ impl IntoRodNode for RodNode {
     }
 }
 
-// Fallback for types that implement Validator but aren't in the Enum (e.g. boxed or custom structs)
-// Note: This might conflict with blanket impls if we aren't careful.
-// Rust doesn't support specialization yet.
-// Since we manually implemented IntoRodNode for all concrete types above,
-// we can't have a blanket impl `impl<T: RodValidator> IntoRodNode for T`.
-// Instead, factory functions accepting `T: IntoRodNode` will work for known types.
-// For unknown custom types, users must manually wrap in `RodNode::Custom(Box::new(v))`.
-// Or we provide a helper `custom(v)`.
-
-pub fn wrap_custom(v: Box<dyn RodValidator>) -> RodNode {
+/// Helper for wrapping custom trait objects into a Node.
+pub fn wrap_custom(v: Box<dyn DynValidator>) -> RodNode {
     RodNode::Custom(v)
 }

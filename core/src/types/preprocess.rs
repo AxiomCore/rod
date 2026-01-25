@@ -1,5 +1,5 @@
 use crate::core::input::{DataType, RodInput};
-use crate::core::validator::RodValidator;
+use crate::core::validator::{DynValidator, RodValidator};
 use crate::core::value::RodValue;
 use crate::error::ValidationContext;
 use crate::types::node::{IntoRodNode, RodNode};
@@ -12,9 +12,8 @@ pub struct RodPreprocess<F>
 where
     F: for<'i> Fn(&dyn RodInput<'i>) -> Value + Send + Sync + Clone,
 {
-    preprocessor: F,
-    // UPDATED: Holds the Enum node for hybrid dispatch
-    schema: Box<RodNode>,
+    pub preprocessor: F,
+    pub schema: Box<RodNode>,
 }
 
 impl<F> fmt::Debug for RodPreprocess<F>
@@ -41,9 +40,12 @@ where
     }
 }
 
-// Local helper to break lifetime invariance in RodValueInput
+// Local helper to wrap preprocessed JSON Value into a RodInput
 #[derive(Debug)]
 struct LocalValueInput<'a, 'b>(&'a RodValue<'b>);
+
+// REMOVED: impl RodThreadBounds for LocalValueInput
+// It is automatically implemented via the blanket impl in input.rs
 
 impl<'a, 'b> RodInput<'a> for LocalValueInput<'a, 'b> {
     fn get_type(&self) -> DataType {
@@ -156,35 +158,31 @@ impl<F> RodValidator for RodPreprocess<F>
 where
     F: for<'i> Fn(&dyn RodInput<'i>) -> Value + Send + Sync + Clone + 'static,
 {
-    fn validate_with_context<'a>(
+    fn validate_with_context<'a, I: RodInput<'a>>(
         &self,
         ctx: &mut ValidationContext,
-        input: &dyn RodInput<'a>,
+        input: &I,
     ) -> Result<RodValue<'a>, ()> {
-        // 1. Transform Input
         let processed_value = (self.preprocessor)(input);
 
-        // 2. Wrap and Validate
         let result_static = {
             let rod_val = RodValue::Json(processed_value);
             let wrapped_input = LocalValueInput(&rod_val);
 
-            // HYBRID DISPATCH: Calling validate_with_context on RodNode Enum
+            // This call is now monomorphized for LocalValueInput
             let result = self.schema.validate_with_context(ctx, &wrapped_input)?;
 
-            // Convert to RodValue<'static> (Owned) to pass the boundary
             result.into_owned()
         };
 
-        // 3. Cast 'static to 'a
         Ok(cast_static_to_lifetime(result_static))
     }
 
-    fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
+    fn deep_partial_boxed(&self) -> Box<dyn DynValidator> {
         self.schema.deep_partial_boxed()
     }
 
-    fn clone_box(&self) -> Box<dyn RodValidator> {
+    fn clone_box(&self) -> Box<dyn DynValidator> {
         Box::new(self.clone())
     }
 }
@@ -217,4 +215,23 @@ where
         preprocessor,
         schema.into_node(),
     )))
+}
+
+impl<F> DynValidator for RodPreprocess<F>
+where
+    F: for<'i> Fn(&dyn RodInput<'i>) -> serde_json::Value + Send + Sync + Clone + 'static,
+{
+    fn validate_dyn<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
+        self.validate_with_context(ctx, &crate::core::input::BoxedInput(input))
+    }
+    fn deep_partial_dyn(&self) -> Box<dyn DynValidator> {
+        self.deep_partial_boxed()
+    }
+    fn clone_dyn(&self) -> Box<dyn DynValidator> {
+        self.clone_box()
+    }
 }

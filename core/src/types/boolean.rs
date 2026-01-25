@@ -1,5 +1,5 @@
-use crate::core::input::{DataType, RodInput};
-use crate::core::validator::RodValidator;
+use crate::core::input::{BoxedInput, DataType, RodInput};
+use crate::core::validator::{DynValidator, RodValidator};
 use crate::core::value::RodValue;
 use crate::error::{RodIssueCode, ValidationContext};
 
@@ -7,10 +7,10 @@ use crate::error::{RodIssueCode, ValidationContext};
 pub struct RodBoolean;
 
 impl RodValidator for RodBoolean {
-    fn validate_with_context<'a>(
+    fn validate_with_context<'a, I: RodInput<'a>>(
         &self,
         ctx: &mut ValidationContext,
-        input: &dyn RodInput<'a>,
+        input: &I,
     ) -> Result<RodValue<'a>, ()> {
         if input.get_type() == DataType::Boolean {
             let val = input.as_bool().unwrap_or(false);
@@ -26,13 +26,29 @@ impl RodValidator for RodBoolean {
         Err(())
     }
 
-    fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
+    fn deep_partial_boxed(&self) -> Box<dyn DynValidator> {
         use crate::types::optional::OptionalExtension;
         Box::new(self.clone().optional())
     }
 
-    fn clone_box(&self) -> Box<dyn RodValidator> {
+    fn clone_box(&self) -> Box<dyn DynValidator> {
         Box::new(self.clone())
+    }
+}
+
+impl DynValidator for RodBoolean {
+    fn validate_dyn<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
+        self.validate_with_context(ctx, &BoxedInput(input))
+    }
+    fn deep_partial_dyn(&self) -> Box<dyn DynValidator> {
+        self.deep_partial_boxed()
+    }
+    fn clone_dyn(&self) -> Box<dyn DynValidator> {
+        self.clone_box()
     }
 }
 

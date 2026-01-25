@@ -1,5 +1,5 @@
-use crate::core::input::{DataType, RodInput};
-use crate::core::validator::RodValidator;
+use crate::core::input::{BoxedInput, DataType, RodInput}; // Added BoxedInput
+use crate::core::validator::{DynValidator, RodValidator}; // Added DynValidator
 use crate::core::value::RodValue;
 use crate::error::{RodIssueCode, ValidationContext};
 use crate::types::node::{IntoRodNode, RodNode};
@@ -7,8 +7,8 @@ use crate::types::node::{IntoRodNode, RodNode};
 #[derive(Debug, Clone)]
 pub struct RodArray {
     pub schema: Box<RodNode>,
-    min: Option<usize>,
-    max: Option<usize>,
+    pub min: Option<usize>,
+    pub max: Option<usize>,
 }
 
 impl RodArray {
@@ -34,15 +34,14 @@ impl RodArray {
 }
 
 impl RodValidator for RodArray {
-    fn validate_with_context<'a>(
+    fn validate_with_context<'a, I: RodInput<'a>>(
         &self,
         ctx: &mut ValidationContext,
-        input: &dyn RodInput<'a>,
+        input: &I,
     ) -> Result<RodValue<'a>, ()> {
         if input.get_type() == DataType::Array {
             let len = input.count().unwrap_or(0);
 
-            // 1. Validate Length
             if let Some(min) = self.min {
                 if len < min {
                     ctx.add_issue(
@@ -68,13 +67,13 @@ impl RodValidator for RodArray {
                 }
             }
 
-            // 2. Validate Items using with_index visitor (Zero Copy)
             let mut valid_items = Vec::with_capacity(len);
             for i in 0..len {
                 let item_res = ctx.with_index(i, |sub_ctx| {
                     input.with_index(i, &mut |item_input| {
-                        // HYBRID DISPATCH: Calling validate on RodNode enum variant
-                        self.schema.validate_with_context(sub_ctx, item_input)
+                        // Bridge the dynamic item_input to Sized for the Node validation
+                        self.schema
+                            .validate_with_context(sub_ctx, &BoxedInput(item_input))
                     })
                 });
 
@@ -88,7 +87,6 @@ impl RodValidator for RodArray {
             if ctx.has_issues() {
                 return Err(());
             }
-
             return Ok(RodValue::Array(valid_items));
         }
 
@@ -102,22 +100,34 @@ impl RodValidator for RodArray {
         Err(())
     }
 
-    fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
+    fn deep_partial_boxed(&self) -> Box<dyn DynValidator> {
         use crate::types::optional::OptionalExtension;
-        // Since deep_partial_boxed returns Box<dyn Validator>, we lose static info here during recursion logic.
-        // The resulting array will contain a Custom(Box<dyn>) node.
-        // This is acceptable for 'partial' schemas which are less performance critical than the main schema.
         let partial_item = self.schema.deep_partial_boxed();
-
-        // We need to wrap the boxed validator into a Node::Custom to create a RodArray
         let node = crate::types::node::wrap_custom(partial_item);
-
-        // Return Array<Custom> wrapped in Optional
         Box::new(RodArray::new(node).optional())
     }
 
-    fn clone_box(&self) -> Box<dyn RodValidator> {
+    fn clone_box(&self) -> Box<dyn DynValidator> {
         Box::new(self.clone())
+    }
+}
+
+// NEW: Manual implementation of DynValidator to satisfy RodNode::Custom and break recursion
+impl DynValidator for RodArray {
+    fn validate_dyn<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
+        self.validate_with_context(ctx, &BoxedInput(input))
+    }
+
+    fn deep_partial_dyn(&self) -> Box<dyn DynValidator> {
+        self.deep_partial_boxed()
+    }
+
+    fn clone_dyn(&self) -> Box<dyn DynValidator> {
+        self.clone_box()
     }
 }
 

@@ -1,5 +1,5 @@
-use crate::core::input::{DataType, RodInput};
-use crate::core::validator::RodValidator;
+use crate::core::input::{BoxedInput, DataType, RodInput};
+use crate::core::validator::{DynValidator, RodValidator};
 use crate::core::value::RodValue;
 use crate::error::{RodIssueCode, ValidationContext};
 use crate::io::json;
@@ -21,10 +21,10 @@ impl RodRecord {
 }
 
 impl RodValidator for RodRecord {
-    fn validate_with_context<'a>(
+    fn validate_with_context<'a, I: RodInput<'a>>(
         &self,
         ctx: &mut ValidationContext,
-        input: &dyn RodInput<'a>,
+        input: &I,
     ) -> Result<RodValue<'a>, ()> {
         if input.get_type() != DataType::Object {
             ctx.add_issue(
@@ -38,18 +38,17 @@ impl RodValidator for RodRecord {
         }
 
         let mut output = Vec::new();
-
         if let Some(keys) = input.keys() {
             for key in keys {
                 let key_val = serde_json::Value::String(key.to_string());
                 let key_input = json::wrap(&key_val);
 
-                let key_valid = ctx.with_owned_path(key.to_string(), |sub_ctx| {
-                    // STATIC DISPATCH
-                    self.key_schema.validate_with_context(sub_ctx, &key_input)
-                });
-
-                if key_valid.is_err() {
+                if ctx
+                    .with_owned_path(key.to_string(), |sub_ctx| {
+                        self.key_schema.validate_with_context(sub_ctx, &key_input)
+                    })
+                    .is_err()
+                {
                     if ctx.should_abort() {
                         return Err(());
                     }
@@ -58,8 +57,8 @@ impl RodValidator for RodRecord {
 
                 let val_res = ctx.with_owned_path(key.to_string(), |sub_ctx| {
                     input.with_key(key.as_ref(), &mut |val_input| {
-                        // STATIC DISPATCH
-                        self.value_schema.validate_with_context(sub_ctx, val_input)
+                        self.value_schema
+                            .validate_with_context(sub_ctx, &BoxedInput(val_input))
                     })
                 });
 
@@ -74,18 +73,33 @@ impl RodValidator for RodRecord {
         if ctx.has_issues() {
             return Err(());
         }
-
         Ok(RodValue::Object(output))
     }
 
-    fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
+    fn deep_partial_boxed(&self) -> Box<dyn DynValidator> {
         use crate::types::optional::OptionalExtension;
         let partial_value = wrap_custom(self.value_schema.deep_partial_boxed());
-        Box::new(RodRecord::new((*self.key_schema).clone(), partial_value.into_node()).optional())
+        Box::new(RodRecord::new((*self.key_schema).clone(), partial_value).optional())
     }
 
-    fn clone_box(&self) -> Box<dyn RodValidator> {
+    fn clone_box(&self) -> Box<dyn DynValidator> {
         Box::new(self.clone())
+    }
+}
+
+impl DynValidator for RodRecord {
+    fn validate_dyn<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
+        self.validate_with_context(ctx, &BoxedInput(input))
+    }
+    fn deep_partial_dyn(&self) -> Box<dyn DynValidator> {
+        self.deep_partial_boxed()
+    }
+    fn clone_dyn(&self) -> Box<dyn DynValidator> {
+        self.clone_box()
     }
 }
 

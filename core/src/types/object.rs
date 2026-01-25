@@ -1,5 +1,5 @@
-use crate::core::input::{DataType, RodInput};
-use crate::core::validator::RodValidator;
+use crate::core::input::{BoxedInput, DataType, RodInput};
+use crate::core::validator::{DynValidator, RodValidator};
 use crate::core::value::RodValue;
 use crate::error::{RodIssueCode, ValidationContext};
 use crate::types::enum_type::{RodEnum, enum_type};
@@ -16,9 +16,8 @@ pub enum UnknownKeys {
 
 #[derive(Clone)]
 pub struct RodObject {
-    // UPDATED: Holds strong types
-    shape: HashMap<String, RodNode>,
-    unknown_keys: UnknownKeys,
+    pub shape: HashMap<String, RodNode>,
+    pub unknown_keys: UnknownKeys,
 }
 
 impl std::fmt::Debug for RodObject {
@@ -29,6 +28,7 @@ impl std::fmt::Debug for RodObject {
             .finish()
     }
 }
+
 impl RodObject {
     pub fn new(shape: HashMap<String, RodNode>) -> Self {
         Self {
@@ -37,7 +37,6 @@ impl RodObject {
         }
     }
 
-    // Legacy support: Convert map of trait objects to map of Nodes
     pub fn from_validators<T: IntoRodNode>(map: HashMap<String, T>) -> Self {
         let mut shape = HashMap::new();
         for (k, v) in map {
@@ -67,7 +66,6 @@ impl RodObject {
     pub fn deep_partial(self) -> RodObject {
         let mut new_shape = HashMap::new();
         for (key, validator) in self.shape {
-            // Wrap the partial result (Box<dyn>) into Node::Custom
             new_shape.insert(
                 key,
                 crate::types::node::wrap_custom(validator.deep_partial_boxed()),
@@ -81,20 +79,18 @@ impl RodObject {
 }
 
 impl RodValidator for RodObject {
-    fn validate_with_context<'a>(
+    fn validate_with_context<'a, I: RodInput<'a>>(
         &self,
         ctx: &mut ValidationContext,
-        input: &dyn RodInput<'a>,
+        input: &I,
     ) -> Result<RodValue<'a>, ()> {
         if input.get_type() == DataType::Object {
             let mut output = Vec::new();
 
-            // 1. Validate Shape
             for (key, validator) in &self.shape {
                 let result_op = ctx.with_owned_path(key.clone(), |sub_ctx| {
                     input.with_key(key, &mut |child_input| {
-                        // HYBRID DISPATCH
-                        validator.validate_with_context(sub_ctx, child_input)
+                        validator.validate_with_context(sub_ctx, &BoxedInput(child_input))
                     })
                 });
 
@@ -123,7 +119,6 @@ impl RodValidator for RodObject {
                 }
             }
 
-            // 2. Handle Unknown Keys (Optimized Check)
             if self.unknown_keys != UnknownKeys::Strip {
                 if let Some(keys_iter) = input.keys() {
                     for key in keys_iter {
@@ -140,12 +135,11 @@ impl RodValidator for RodObject {
                                     });
                                 }
                                 UnknownKeys::Passthrough => {
-                                    let val_lazy =
+                                    if let Some(Ok(v)) =
                                         input.with_key(key.as_ref(), &mut |field_input| {
                                             Ok(RodValue::Lazy(field_input.clone_box()))
-                                        });
-
-                                    if let Some(Ok(v)) = val_lazy {
+                                        })
+                                    {
                                         output.push((key, v));
                                     }
                                 }
@@ -159,7 +153,6 @@ impl RodValidator for RodObject {
             if ctx.has_issues() {
                 return Err(());
             }
-
             return Ok(RodValue::Object(output));
         }
 
@@ -173,21 +166,36 @@ impl RodValidator for RodObject {
         Err(())
     }
 
-    fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
+    fn deep_partial_boxed(&self) -> Box<dyn DynValidator> {
         use crate::types::optional::OptionalExtension;
         Box::new(self.clone().deep_partial().optional())
     }
 
-    fn clone_box(&self) -> Box<dyn RodValidator> {
+    fn clone_box(&self) -> Box<dyn DynValidator> {
         Box::new(self.clone())
     }
 }
 
-pub fn object(shape: HashMap<String, Box<dyn RodValidator>>) -> RodObject {
-    // Helper to wrap generic map into RodNodes for backward compatibility
+impl DynValidator for RodObject {
+    fn validate_dyn<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
+        self.validate_with_context(ctx, &BoxedInput(input))
+    }
+    fn deep_partial_dyn(&self) -> Box<dyn DynValidator> {
+        self.deep_partial_boxed()
+    }
+    fn clone_dyn(&self) -> Box<dyn DynValidator> {
+        self.clone_box()
+    }
+}
+
+pub fn object(shape: HashMap<String, Box<dyn DynValidator>>) -> RodObject {
     let mut node_shape = HashMap::new();
     for (k, v) in shape {
-        node_shape.insert(k, crate::types::node::wrap_custom(v));
+        node_shape.insert(k, RodNode::Custom(v));
     }
     RodObject::new(node_shape)
 }

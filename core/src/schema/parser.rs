@@ -1,4 +1,4 @@
-use crate::core::validator::RodValidator;
+use crate::core::validator::DynValidator;
 use crate::types::array::RodArray;
 use crate::types::boolean::RodBoolean;
 use crate::types::date::RodDate;
@@ -106,7 +106,7 @@ impl RodSpec {
         }
     }
 
-    /// Recursively builds the schema into a optimized RodNode tree.
+    /// Recursively builds the schema into an optimized RodNode tree.
     pub fn build_node(&self) -> RodNode {
         match self {
             RodSpec::Date { min, max } => {
@@ -255,13 +255,15 @@ impl RodSpec {
         }
     }
 
-    /// Legacy support returning a boxed trait object.
-    pub fn build(&self) -> Box<dyn RodValidator> {
+    /// Legacy support returning a boxed object-safe trait object.
+    /// Changed from Box<dyn RodValidator> to Box<dyn DynValidator>.
+    pub fn build(&self) -> Box<dyn DynValidator> {
         Box::new(self.build_node())
     }
 }
 
-pub fn from_yaml(content: &str) -> Result<Box<dyn RodValidator>, serde_yaml::Error> {
+/// Parse a Rod schema from YAML. Returns an object-safe trait object.
+pub fn from_yaml(content: &str) -> Result<Box<dyn DynValidator>, serde_yaml::Error> {
     let spec: RodSpec = serde_yaml::from_str(content)?;
     Ok(spec.build())
 }

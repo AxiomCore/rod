@@ -1,13 +1,12 @@
-use crate::core::input::RodInput;
-use crate::core::validator::RodValidator;
+use crate::core::input::{BoxedInput, RodInput};
+use crate::core::validator::{DynValidator, RodValidator};
 use crate::core::value::RodValue;
 use crate::error::{RodIssueCode, ValidationContext};
-use crate::types::node::{IntoRodNode, RodNode};
+use crate::types::node::{IntoRodNode, RodNode, wrap_custom};
 
 #[derive(Debug, Clone)]
 pub struct RodUnion {
-    // UPDATED: Vec of Nodes
-    options: Vec<RodNode>,
+    pub options: Vec<RodNode>,
 }
 
 impl RodUnion {
@@ -17,40 +16,47 @@ impl RodUnion {
 }
 
 impl RodValidator for RodUnion {
-    fn validate_with_context<'a>(
+    fn validate_with_context<'a, I: RodInput<'a>>(
         &self,
         ctx: &mut ValidationContext,
-        input: &dyn RodInput<'a>,
+        input: &I,
     ) -> Result<RodValue<'a>, ()> {
         for validator in &self.options {
-            // Use fork() (now optimized with SmallVec)
             let mut temp_ctx = ctx.fork();
-
-            // HYBRID DISPATCH: Calling validate on RodNode
             if let Ok(val) = validator.validate_with_context(&mut temp_ctx, input) {
                 return Ok(val);
             }
         }
-
         ctx.add_issue(RodIssueCode::InvalidUnion, "Invalid input".into());
         Err(())
     }
-
-    fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
+    fn deep_partial_boxed(&self) -> Box<dyn DynValidator> {
         use crate::types::optional::OptionalExtension;
         let partial_options = self
             .options
             .iter()
-            .map(|o| {
-                // Wrap partial (Box<dyn>) into Node::Custom
-                crate::types::node::wrap_custom(o.deep_partial_boxed())
-            })
+            .map(|o| wrap_custom(o.deep_partial_boxed()))
             .collect();
         Box::new(RodUnion::new(partial_options).optional())
     }
-
-    fn clone_box(&self) -> Box<dyn RodValidator> {
+    fn clone_box(&self) -> Box<dyn DynValidator> {
         Box::new(self.clone())
+    }
+}
+
+impl DynValidator for RodUnion {
+    fn validate_dyn<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
+        self.validate_with_context(ctx, &BoxedInput(input))
+    }
+    fn deep_partial_dyn(&self) -> Box<dyn DynValidator> {
+        self.deep_partial_boxed()
+    }
+    fn clone_dyn(&self) -> Box<dyn DynValidator> {
+        self.clone_box()
     }
 }
 

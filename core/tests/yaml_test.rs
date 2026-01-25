@@ -1,5 +1,7 @@
 use rod::from_yaml;
 use rod::io::json::wrap;
+// IMPORTANT: RodValidator must be in scope to call .validate() on the boxed schema
+use rod::RodValidator;
 use serde_json::json;
 
 #[test]
@@ -22,12 +24,15 @@ properties:
     items:
       type: string
 "#;
+    // schema is Box<dyn DynValidator>
     let schema = from_yaml(yaml).expect("Spec parse failed");
 
     let valid = json!({
         "user": { "id": 1, "email": "test@rod.rs" },
         "roles": ["admin"]
     });
+
+    // This calls the monomorphized validate path using JsonInput
     assert!(schema.validate(&wrap(&valid)).is_ok());
 
     let invalid = json!({

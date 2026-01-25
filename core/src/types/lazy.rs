@@ -1,5 +1,5 @@
-use crate::core::input::RodInput;
-use crate::core::validator::RodValidator;
+use crate::core::input::{BoxedInput, RodInput};
+use crate::core::validator::{DynValidator, RodValidator};
 use crate::core::value::RodValue;
 use crate::error::ValidationContext;
 use crate::types::node::{RodNode, wrap_custom};
@@ -7,8 +7,7 @@ use std::fmt;
 use std::sync::Arc;
 
 pub struct RodLazy {
-    // UPDATED: Builder returns a concrete Node
-    builder: Arc<dyn Fn() -> RodNode + Send + Sync>,
+    pub builder: Arc<dyn Fn() -> RodNode + Send + Sync>,
 }
 
 impl Clone for RodLazy {
@@ -28,7 +27,6 @@ impl fmt::Debug for RodLazy {
 impl RodLazy {
     pub fn new<F>(builder: F) -> Self
     where
-        // F returns RodNode
         F: Fn() -> RodNode + Send + Sync + 'static,
     {
         Self {
@@ -38,26 +36,40 @@ impl RodLazy {
 }
 
 impl RodValidator for RodLazy {
-    fn validate_with_context<'a>(
+    fn validate_with_context<'a, I: RodInput<'a>>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &I,
+    ) -> Result<RodValue<'a>, ()> {
+        let node = (self.builder)();
+        // STATIC DISPATCH through Node enum
+        node.validate_with_context(ctx, input)
+    }
+
+    fn deep_partial_boxed(&self) -> Box<dyn DynValidator> {
+        let builder = self.builder.clone();
+        let lazy_partial = RodLazy::new(move || wrap_custom(builder().deep_partial_boxed()));
+        Box::new(lazy_partial)
+    }
+
+    fn clone_box(&self) -> Box<dyn DynValidator> {
+        Box::new(self.clone())
+    }
+}
+
+impl DynValidator for RodLazy {
+    fn validate_dyn<'a>(
         &self,
         ctx: &mut ValidationContext,
         input: &dyn RodInput<'a>,
     ) -> Result<RodValue<'a>, ()> {
-        let node = (self.builder)();
-        // STATIC DISPATCH
-        node.validate_with_context(ctx, input)
+        self.validate_with_context(ctx, &BoxedInput(input))
     }
-
-    fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
-        use crate::types::optional::OptionalExtension;
-        let builder = self.builder.clone();
-        // Wrap the boxed partial into a Custom node to return a Node-compatible Lazy
-        let lazy_partial = RodLazy::new(move || wrap_custom(builder().deep_partial_boxed()));
-        Box::new(lazy_partial.optional())
+    fn deep_partial_dyn(&self) -> Box<dyn DynValidator> {
+        self.deep_partial_boxed()
     }
-
-    fn clone_box(&self) -> Box<dyn RodValidator> {
-        Box::new(self.clone())
+    fn clone_dyn(&self) -> Box<dyn DynValidator> {
+        self.clone_box()
     }
 }
 

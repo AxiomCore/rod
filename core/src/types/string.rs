@@ -1,5 +1,5 @@
-use crate::core::input::{DataType, RodInput};
-use crate::core::validator::RodValidator;
+use crate::core::input::{BoxedInput, DataType, RodInput};
+use crate::core::validator::{DynValidator, RodValidator};
 use crate::core::value::RodValue;
 use crate::error::{RodIssueCode, ValidationContext};
 use lazy_static::lazy_static;
@@ -16,22 +16,22 @@ lazy_static! {
 
 #[derive(Debug, Clone, Default)]
 pub struct RodString {
-    min: Option<usize>,
-    max: Option<usize>,
-    length: Option<usize>,
-    is_email: bool,
-    is_url: bool,
-    is_uuid: bool,
-    is_cuid: bool,
-    is_cuid2: bool,
-    is_ulid: bool,
-    is_datetime: bool,
-    is_ip: bool,
-    starts_with: Option<String>,
-    ends_with: Option<String>,
-    includes: Option<String>,
-    regex: Option<String>,
-    should_trim: bool,
+    pub min: Option<usize>,
+    pub max: Option<usize>,
+    pub length: Option<usize>,
+    pub is_email: bool,
+    pub is_url: bool,
+    pub is_uuid: bool,
+    pub is_cuid: bool,
+    pub is_cuid2: bool,
+    pub is_ulid: bool,
+    pub is_datetime: bool,
+    pub is_ip: bool,
+    pub starts_with: Option<String>,
+    pub ends_with: Option<String>,
+    pub includes: Option<String>,
+    pub regex: Option<String>,
+    pub should_trim: bool,
 }
 
 impl RodString {
@@ -66,20 +66,16 @@ impl RodString {
         self.is_cuid = true;
         self
     }
-    pub fn cuid2(mut self) -> Self {
-        self.is_cuid2 = true;
-        self
-    }
-    pub fn ulid(mut self) -> Self {
-        self.is_ulid = true;
+    pub fn ip(mut self) -> Self {
+        self.is_ip = true;
         self
     }
     pub fn datetime(mut self) -> Self {
         self.is_datetime = true;
         self
     }
-    pub fn ip(mut self) -> Self {
-        self.is_ip = true;
+    pub fn trim(mut self) -> Self {
+        self.should_trim = true;
         self
     }
     pub fn starts_with(mut self, val: &str) -> Self {
@@ -94,12 +90,8 @@ impl RodString {
         self.includes = Some(val.to_string());
         self
     }
-    pub fn regex(mut self, pattern: &str) -> Self {
-        self.regex = Some(pattern.to_string());
-        self
-    }
-    pub fn trim(mut self) -> Self {
-        self.should_trim = true;
+    pub fn regex(mut self, val: &str) -> Self {
+        self.regex = Some(val.to_string());
         self
     }
 }
@@ -128,10 +120,10 @@ fn is_cuid(s: &str) -> bool {
 }
 
 impl RodValidator for RodString {
-    fn validate_with_context<'a>(
+    fn validate_with_context<'a, I: RodInput<'a>>(
         &self,
         ctx: &mut ValidationContext,
-        input: &dyn RodInput<'a>,
+        input: &I,
     ) -> Result<RodValue<'a>, ()> {
         // 1. Basic Type Check
         if input.get_type() != DataType::String {
@@ -145,10 +137,8 @@ impl RodValidator for RodString {
             return Err(());
         }
 
-        // 2. --- OPTIMIZATION: Length Fast-Path ---
-        // We use as_str_len() which (in WASM) calls JS .length without copying bytes.
+        // 2. Optimization: Length check (Devirtualized call)
         let check_len = input.as_str_len().unwrap_or(0);
-
         if let Some(min) = self.min {
             if check_len < min {
                 ctx.add_issue(
@@ -157,7 +147,7 @@ impl RodValidator for RodString {
                         inclusive: true,
                         type_: "string".into(),
                     },
-                    format!("String too short"),
+                    "Too short".into(),
                 );
             }
         }
@@ -169,7 +159,7 @@ impl RodValidator for RodString {
                         inclusive: true,
                         type_: "string".into(),
                     },
-                    format!("String too long"),
+                    "Too long".into(),
                 );
             }
         }
@@ -179,18 +169,16 @@ impl RodValidator for RodString {
                     RodIssueCode::InvalidString {
                         validation: "length".into(),
                     },
-                    format!("Invalid length"),
+                    "Invalid length".into(),
                 );
             }
         }
 
-        // 3. Determine if we need the actual string content
+        // 3. Determine if we need to extract string content
         let needs_content = self.is_email
             || self.is_url
             || self.is_uuid
             || self.is_cuid
-            || self.is_cuid2
-            || self.is_ulid
             || self.is_datetime
             || self.is_ip
             || self.starts_with.is_some()
@@ -199,7 +187,6 @@ impl RodValidator for RodString {
             || self.regex.is_some()
             || self.should_trim;
 
-        // If no content checks are needed and we have no issues, return Lazy cursor (Zero Copy)
         if !needs_content {
             if ctx.has_issues() {
                 return Err(());
@@ -207,12 +194,11 @@ impl RodValidator for RodString {
             return Ok(RodValue::Lazy(input.clone_box()));
         }
 
-        // 4. --- SLOW PATH: Content Validation ---
-        // This triggers the actual JS -> Rust string copy/allocation
+        // 4. Content Validation Path
         let s_cow = input.as_str().ok_or_else(|| {
             ctx.add_issue(
                 RodIssueCode::Message {
-                    message: "Internal string error".into(),
+                    message: "Internal error".into(),
                 },
                 "Internal error".into(),
             );
@@ -229,7 +215,7 @@ impl RodValidator for RodString {
 
         let check_str = val_cow.as_ref();
 
-        // Perform specialized checks
+        // Specific Validations
         if self.is_email && !EMAIL_REGEX.is_match(check_str) {
             ctx.add_issue(
                 RodIssueCode::InvalidString {
@@ -319,17 +305,32 @@ impl RodValidator for RodString {
         if ctx.has_issues() {
             return Err(());
         }
-
         Ok(RodValue::String(val_cow))
     }
 
-    fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
+    fn deep_partial_boxed(&self) -> Box<dyn DynValidator> {
         use crate::types::optional::OptionalExtension;
         Box::new(self.clone().optional())
     }
 
-    fn clone_box(&self) -> Box<dyn RodValidator> {
+    fn clone_box(&self) -> Box<dyn DynValidator> {
         Box::new(self.clone())
+    }
+}
+
+impl DynValidator for RodString {
+    fn validate_dyn<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
+        self.validate_with_context(ctx, &BoxedInput(input))
+    }
+    fn deep_partial_dyn(&self) -> Box<dyn DynValidator> {
+        self.deep_partial_boxed()
+    }
+    fn clone_dyn(&self) -> Box<dyn DynValidator> {
+        self.clone_box()
     }
 }
 

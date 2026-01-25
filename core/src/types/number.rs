@@ -1,13 +1,13 @@
-use crate::core::input::{DataType, RodInput};
-use crate::core::validator::RodValidator;
+use crate::core::input::{BoxedInput, DataType, RodInput};
+use crate::core::validator::{DynValidator, RodValidator};
 use crate::core::value::RodValue;
 use crate::error::{RodIssueCode, ValidationContext};
 
 #[derive(Debug, Clone, Default)]
 pub struct RodNumber {
-    min: Option<f64>,
-    max: Option<f64>,
-    is_int: bool,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub is_int: bool,
 }
 
 impl RodNumber {
@@ -29,17 +29,16 @@ impl RodNumber {
 }
 
 impl RodValidator for RodNumber {
-    fn validate_with_context<'a>(
+    fn validate_with_context<'a, I: RodInput<'a>>(
         &self,
         ctx: &mut ValidationContext,
-        input: &dyn RodInput<'a>,
+        input: &I,
     ) -> Result<RodValue<'a>, ()> {
         if input.get_type() == DataType::Number {
             let maybe_u64 = input.as_u64();
             let maybe_i64 = input.as_i64();
             let maybe_f64 = input.as_f64();
 
-            // 1. Integer Check
             if self.is_int {
                 let is_integer = maybe_i64.is_some()
                     || maybe_u64.is_some()
@@ -51,13 +50,12 @@ impl RodValidator for RodNumber {
                             expected: "integer".into(),
                             received: "float".into(),
                         },
-                        "Expected integer, received float".into(),
+                        "Expected integer".into(),
                     );
                     return Err(());
                 }
             }
 
-            // 2. Bounds Check (Hybrid)
             if let Some(u_val) = maybe_u64 {
                 if let Some(min) = self.min {
                     if min >= 0.0 && u_val < (min as u64) {
@@ -67,24 +65,20 @@ impl RodValidator for RodNumber {
                                 inclusive: true,
                                 type_: "number".into(),
                             },
-                            format!("Number too small"),
+                            "Number too small".into(),
                         );
-                    } else if min < 0.0 {
-                        // u64 is always >= negative min
                     }
                 }
                 if let Some(max) = self.max {
-                    if max >= 0.0 {
-                        if u_val > (max as u64) {
-                            ctx.add_issue(
-                                RodIssueCode::TooBig {
-                                    maximum: max,
-                                    inclusive: true,
-                                    type_: "number".into(),
-                                },
-                                format!("Number too big"),
-                            );
-                        }
+                    if max >= 0.0 && u_val > (max as u64) {
+                        ctx.add_issue(
+                            RodIssueCode::TooBig {
+                                maximum: max,
+                                inclusive: true,
+                                type_: "number".into(),
+                            },
+                            "Number too big".into(),
+                        );
                     }
                 }
             } else if let Some(f_val) = maybe_f64 {
@@ -96,7 +90,7 @@ impl RodValidator for RodNumber {
                                 inclusive: true,
                                 type_: "number".into(),
                             },
-                            format!("Number too small"),
+                            "Number too small".into(),
                         );
                     }
                 }
@@ -108,7 +102,7 @@ impl RodValidator for RodNumber {
                                 inclusive: true,
                                 type_: "number".into(),
                             },
-                            format!("Number too big"),
+                            "Number too big".into(),
                         );
                     }
                 }
@@ -125,7 +119,6 @@ impl RodValidator for RodNumber {
             if ctx.has_issues() {
                 return Err(());
             }
-
             return Ok(RodValue::Number(maybe_f64.unwrap_or(0.0)));
         }
 
@@ -139,13 +132,29 @@ impl RodValidator for RodNumber {
         Err(())
     }
 
-    fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
+    fn deep_partial_boxed(&self) -> Box<dyn DynValidator> {
         use crate::types::optional::OptionalExtension;
         Box::new(self.clone().optional())
     }
 
-    fn clone_box(&self) -> Box<dyn RodValidator> {
+    fn clone_box(&self) -> Box<dyn DynValidator> {
         Box::new(self.clone())
+    }
+}
+
+impl DynValidator for RodNumber {
+    fn validate_dyn<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
+        self.validate_with_context(ctx, &BoxedInput(input))
+    }
+    fn deep_partial_dyn(&self) -> Box<dyn DynValidator> {
+        self.deep_partial_boxed()
+    }
+    fn clone_dyn(&self) -> Box<dyn DynValidator> {
+        self.clone_box()
     }
 }
 

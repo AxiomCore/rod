@@ -1,5 +1,5 @@
 use crate::core::input::RodInput;
-use crate::core::validator::RodValidator;
+use crate::core::validator::{DynValidator, RodValidator};
 use crate::core::value::RodValue;
 use crate::error::{RodIssueCode, ValidationContext};
 use crate::types::node::{IntoRodNode, RodNode};
@@ -12,8 +12,8 @@ pub struct RodRefine<F>
 where
     F: for<'v> Fn(&RodValue<'v>) -> Result<(), String> + Send + Sync + Clone,
 {
-    schema: Box<RodNode>,
-    check: F,
+    pub schema: Box<RodNode>,
+    pub check: F,
 }
 
 impl<F> fmt::Debug for RodRefine<F>
@@ -44,13 +44,15 @@ impl<F> RodValidator for RodRefine<F>
 where
     F: for<'v> Fn(&RodValue<'v>) -> Result<(), String> + Send + Sync + Clone + 'static,
 {
-    fn validate_with_context<'a>(
+    fn validate_with_context<'a, I: RodInput<'a>>(
         &self,
         ctx: &mut ValidationContext,
-        input: &dyn RodInput<'a>,
+        input: &I,
     ) -> Result<RodValue<'a>, ()> {
+        // MONOMORPHIZED CALL: Specialized validation of the inner schema
         let val = self.schema.validate_with_context(ctx, input)?;
 
+        // Custom Refinement Logic
         if let Err(msg) = (self.check)(&val) {
             ctx.add_issue(
                 RodIssueCode::Custom {
@@ -64,11 +66,11 @@ where
         Ok(val)
     }
 
-    fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
+    fn deep_partial_boxed(&self) -> Box<dyn DynValidator> {
         self.schema.deep_partial_boxed()
     }
 
-    fn clone_box(&self) -> Box<dyn RodValidator> {
+    fn clone_box(&self) -> Box<dyn DynValidator> {
         Box::new(self.clone())
     }
 }
@@ -80,8 +82,8 @@ pub struct RodTransform<F>
 where
     F: Fn(RodValue) -> RodValue + Send + Sync + Clone,
 {
-    schema: Box<RodNode>,
-    transformer: F,
+    pub schema: Box<RodNode>,
+    pub transformer: F,
 }
 
 impl<F> fmt::Debug for RodTransform<F>
@@ -112,27 +114,29 @@ impl<F> RodValidator for RodTransform<F>
 where
     F: Fn(RodValue) -> RodValue + Send + Sync + Clone + 'static,
 {
-    fn validate_with_context<'a>(
+    fn validate_with_context<'a, I: RodInput<'a>>(
         &self,
         ctx: &mut ValidationContext,
-        input: &dyn RodInput<'a>,
+        input: &I,
     ) -> Result<RodValue<'a>, ()> {
+        // MONOMORPHIZED CALL
         let val = self.schema.validate_with_context(ctx, input)?;
+
+        // Transformation Logic
         Ok((self.transformer)(val))
     }
 
-    fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
+    fn deep_partial_boxed(&self) -> Box<dyn DynValidator> {
         self.schema.deep_partial_boxed()
     }
 
-    fn clone_box(&self) -> Box<dyn RodValidator> {
+    fn clone_box(&self) -> Box<dyn DynValidator> {
         Box::new(self.clone())
     }
 }
 
 // --- Helpers ---
 
-// UPDATED: Now returns RodNode directly to allow nesting in other effects/containers
 pub fn refine<V, F>(validator: V, check: F) -> RodNode
 where
     V: IntoRodNode + 'static,
@@ -141,7 +145,6 @@ where
     RodNode::Custom(Box::new(RodRefine::new(validator.into_node(), check)))
 }
 
-// UPDATED: Now returns RodNode directly
 pub fn transform<V, F>(validator: V, transformer: F) -> RodNode
 where
     V: IntoRodNode + 'static,
@@ -151,4 +154,42 @@ where
         validator.into_node(),
         transformer,
     )))
+}
+
+impl<F> DynValidator for RodRefine<F>
+where
+    F: for<'v> Fn(&RodValue<'v>) -> Result<(), String> + Send + Sync + Clone + 'static,
+{
+    fn validate_dyn<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
+        self.validate_with_context(ctx, &crate::core::input::BoxedInput(input))
+    }
+    fn deep_partial_dyn(&self) -> Box<dyn DynValidator> {
+        self.deep_partial_boxed()
+    }
+    fn clone_dyn(&self) -> Box<dyn DynValidator> {
+        self.clone_box()
+    }
+}
+
+impl<F> DynValidator for RodTransform<F>
+where
+    F: Fn(RodValue) -> RodValue + Send + Sync + Clone + 'static,
+{
+    fn validate_dyn<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
+        self.validate_with_context(ctx, &crate::core::input::BoxedInput(input))
+    }
+    fn deep_partial_dyn(&self) -> Box<dyn DynValidator> {
+        self.deep_partial_boxed()
+    }
+    fn clone_dyn(&self) -> Box<dyn DynValidator> {
+        self.clone_box()
+    }
 }

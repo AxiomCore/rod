@@ -1,5 +1,5 @@
-use crate::core::input::{DataType, RodInput};
-use crate::core::validator::RodValidator;
+use crate::core::input::{BoxedInput, DataType, RodInput};
+use crate::core::validator::{DynValidator, RodValidator};
 use crate::core::value::RodValue;
 use crate::error::{RodIssueCode, ValidationContext};
 use crate::types::node::{IntoRodNode, RodNode, wrap_custom};
@@ -7,9 +7,9 @@ use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
 pub struct RodSet {
-    value_type: Box<RodNode>,
-    min: Option<usize>,
-    max: Option<usize>,
+    pub value_type: Box<RodNode>,
+    pub min: Option<usize>,
+    pub max: Option<usize>,
 }
 
 impl RodSet {
@@ -31,10 +31,10 @@ impl RodSet {
 }
 
 impl RodValidator for RodSet {
-    fn validate_with_context<'a>(
+    fn validate_with_context<'a, I: RodInput<'a>>(
         &self,
         ctx: &mut ValidationContext,
-        input: &dyn RodInput<'a>,
+        input: &I,
     ) -> Result<RodValue<'a>, ()> {
         if input.get_type() != DataType::Array {
             ctx.add_issue(
@@ -51,31 +51,6 @@ impl RodValidator for RodSet {
         let mut valid_items = Vec::with_capacity(len);
         let mut seen = HashSet::new();
 
-        if let Some(min) = self.min {
-            if len < min {
-                ctx.add_issue(
-                    RodIssueCode::TooSmall {
-                        minimum: min as f64,
-                        inclusive: true,
-                        type_: "set".into(),
-                    },
-                    format!("Set too small"),
-                );
-            }
-        }
-        if let Some(max) = self.max {
-            if len > max {
-                ctx.add_issue(
-                    RodIssueCode::TooBig {
-                        maximum: max as f64,
-                        inclusive: true,
-                        type_: "set".into(),
-                    },
-                    format!("Set too big"),
-                );
-            }
-        }
-
         for i in 0..len {
             let item_res = ctx.with_index(i, |sub_ctx| {
                 input.with_index(i, &mut |item_input| {
@@ -89,8 +64,8 @@ impl RodValidator for RodSet {
                             "Items must be unique".into(),
                         );
                     }
-                    // STATIC DISPATCH
-                    self.value_type.validate_with_context(sub_ctx, item_input)
+                    self.value_type
+                        .validate_with_context(sub_ctx, &BoxedInput(item_input))
                 })
             });
 
@@ -104,18 +79,33 @@ impl RodValidator for RodSet {
         if ctx.has_issues() {
             return Err(());
         }
-
         Ok(RodValue::Array(valid_items))
     }
 
-    fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
+    fn deep_partial_boxed(&self) -> Box<dyn DynValidator> {
         use crate::types::optional::OptionalExtension;
         let partial_value = wrap_custom(self.value_type.deep_partial_boxed());
-        Box::new(RodSet::new(partial_value.into_node()).optional())
+        Box::new(RodSet::new(partial_value).optional())
     }
 
-    fn clone_box(&self) -> Box<dyn RodValidator> {
+    fn clone_box(&self) -> Box<dyn DynValidator> {
         Box::new(self.clone())
+    }
+}
+
+impl DynValidator for RodSet {
+    fn validate_dyn<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
+        self.validate_with_context(ctx, &BoxedInput(input))
+    }
+    fn deep_partial_dyn(&self) -> Box<dyn DynValidator> {
+        self.deep_partial_boxed()
+    }
+    fn clone_dyn(&self) -> Box<dyn DynValidator> {
+        self.clone_box()
     }
 }
 

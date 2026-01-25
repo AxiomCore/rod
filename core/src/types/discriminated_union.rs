@@ -1,5 +1,5 @@
-use crate::core::input::{DataType, RodInput};
-use crate::core::validator::RodValidator;
+use crate::core::input::{BoxedInput, DataType, RodInput};
+use crate::core::validator::{DynValidator, RodValidator};
 use crate::core::value::RodValue;
 use crate::error::{RodIssueCode, ValidationContext};
 use crate::types::node::{IntoRodNode, RodNode};
@@ -7,8 +7,8 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct RodDiscriminatedUnion {
-    discriminator: String,
-    options: HashMap<String, RodNode>,
+    pub discriminator: String,
+    pub options: HashMap<String, RodNode>,
 }
 
 impl RodDiscriminatedUnion {
@@ -21,10 +21,10 @@ impl RodDiscriminatedUnion {
 }
 
 impl RodValidator for RodDiscriminatedUnion {
-    fn validate_with_context<'a>(
+    fn validate_with_context<'a, I: RodInput<'a>>(
         &self,
         ctx: &mut ValidationContext,
-        input: &dyn RodInput<'a>,
+        input: &I,
     ) -> Result<RodValue<'a>, ()> {
         if input.get_type() != DataType::Object {
             ctx.add_issue(
@@ -37,11 +37,12 @@ impl RodValidator for RodDiscriminatedUnion {
             return Err(());
         }
 
-        let disc_val_opt = input.with_key(&self.discriminator, &mut |disc_input| match disc_input
-            .as_str()
-        {
-            Some(s) => Ok(RodValue::String(s)),
-            None => Err(()),
+        let disc_val_opt = input.with_key(&self.discriminator, &mut |disc_input| {
+            let wrapper = BoxedInput(disc_input);
+            match wrapper.as_str() {
+                Some(s) => Ok(RodValue::String(s)),
+                None => Err(()),
+            }
         });
 
         let disc_cow = match disc_val_opt {
@@ -56,7 +57,6 @@ impl RodValidator for RodDiscriminatedUnion {
         };
 
         if let Some(validator) = self.options.get(disc_cow.as_ref()) {
-            // STATIC DISPATCH
             return validator.validate_with_context(ctx, input);
         }
 
@@ -64,18 +64,33 @@ impl RodValidator for RodDiscriminatedUnion {
             RodIssueCode::InvalidUnionDiscriminator {
                 expected: self.options.keys().cloned().collect(),
             },
-            format!("Invalid discriminator value: {}", disc_cow),
+            format!("Invalid discriminator: {}", disc_cow),
         );
         Err(())
     }
 
-    fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
-        use crate::types::optional::OptionalExtension;
-        Box::new(self.clone().optional())
+    fn deep_partial_boxed(&self) -> Box<dyn DynValidator> {
+        Box::new(self.clone())
     }
 
-    fn clone_box(&self) -> Box<dyn RodValidator> {
+    fn clone_box(&self) -> Box<dyn DynValidator> {
         Box::new(self.clone())
+    }
+}
+
+impl DynValidator for RodDiscriminatedUnion {
+    fn validate_dyn<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> Result<RodValue<'a>, ()> {
+        self.validate_with_context(ctx, &BoxedInput(input))
+    }
+    fn deep_partial_dyn(&self) -> Box<dyn DynValidator> {
+        self.deep_partial_boxed()
+    }
+    fn clone_dyn(&self) -> Box<dyn DynValidator> {
+        self.clone_box()
     }
 }
 

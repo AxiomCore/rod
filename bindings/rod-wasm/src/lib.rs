@@ -3,6 +3,7 @@ use rod::core::validator::RodValidator;
 use rod::core::value::RodValue;
 use rod::io::json::wrap;
 use rod::schema::parser::RodSpec;
+use rod::RodNode;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(start)]
@@ -10,6 +11,7 @@ pub fn main() {
     console_error_panic_hook::set_once();
 }
 
+/// Internal helper to create structured JS error objects for spec failures.
 fn make_err_obj(code: &str, msg: &str) -> JsValue {
     let obj = js_sys::Object::new();
     let _ = js_sys::Reflect::set(&obj, &"code".into(), &code.into());
@@ -19,7 +21,8 @@ fn make_err_obj(code: &str, msg: &str) -> JsValue {
 
 #[wasm_bindgen]
 pub struct RodSchema {
-    validator: Box<dyn RodValidator>,
+    /// Optimized Enum tree enabling Hybrid Dispatch and Monomorphization.
+    validator: RodNode,
 }
 
 #[wasm_bindgen]
@@ -28,23 +31,24 @@ impl RodSchema {
     pub fn new(spec_json: JsValue) -> Result<RodSchema, JsValue> {
         let spec: RodSpec = serde_wasm_bindgen::from_value(spec_json)
             .map_err(|e| make_err_obj("InvalidSpec", &format!("{}", e)))?;
+
         Ok(RodSchema {
-            validator: spec.build(),
+            // Phase 2/3: Build the optimized static Enum tree
+            validator: spec.build_node(),
         })
     }
 
+    /// Recursive converter from Rod internal values back to JavaScript.
+    /// PERFORMANCE: Directly returns JS handles for any() or passthrough fields.
     fn rod_to_js(&self, val: RodValue) -> JsValue {
         match val {
-            // THE PERFORMANCE KEY: Return the original JS handle instantly.
-            // This makes rod.any() and object passthroughs near-instant.
             RodValue::Lazy(inner) => inner.get_js_value().unwrap_or(JsValue::NULL),
             RodValue::Object(fields) => {
                 let obj = js_sys::Object::new();
                 for (k, v) in fields {
                     let js_v = self.rod_to_js(v);
-                    // FIX: Convert Cow<str> to &str using as_ref() before into()
                     let js_k = JsValue::from_str(k.as_ref());
-                    js_sys::Reflect::set(&obj, &js_k, &js_v).unwrap();
+                    let _ = js_sys::Reflect::set(&obj, &js_k, &js_v);
                 }
                 obj.into()
             }
@@ -55,7 +59,6 @@ impl RodSchema {
                 }
                 arr.into()
             }
-            // FIX: Use as_ref() for the String variant Cow too
             RodValue::String(s) => JsValue::from_str(s.as_ref()),
             RodValue::Number(n) => JsValue::from_f64(n),
             RodValue::Boolean(b) => JsValue::from_bool(b),
@@ -64,17 +67,18 @@ impl RodSchema {
         }
     }
 
+    /// Validates a collection by serializing it to JSON first.
+    /// Optimized for heavy logic on massive primitive arrays.
     pub fn check_batch_eager(&self, collection: JsValue) -> Result<js_sys::Uint8Array, JsValue> {
-        // One-time bulk serialization (The only bridge cost we pay)
         let data: Vec<serde_json::Value> = serde_wasm_bindgen::from_value(collection)
             .map_err(|e| make_err_obj("SerializationError", &format!("{}", e)))?;
 
         let len = data.len();
         let mut mask = vec![0u8; len];
 
-        // Pure Rust execution - Zero Bridge Calls!
         for i in 0..len {
             let input = rod::io::json::wrap(&data[i]);
+            // Phase 3: Monomorphized call for JsonInput
             if self.validator.validate(&input).is_ok() {
                 mask[i] = 1;
             }
@@ -83,6 +87,8 @@ impl RodSchema {
         Ok(js_sys::Uint8Array::from(&mask[..]))
     }
 
+    /// Validates a collection using JS Reflection.
+    /// Optimized for large objects where only a few fields are checked.
     pub fn check_batch(&self, collection: JsValue) -> Result<js_sys::Uint8Array, JsValue> {
         let array = js_sys::Array::from(&collection);
         let len = array.length();
@@ -91,6 +97,7 @@ impl RodSchema {
         for i in 0..len {
             let item = array.get(i);
             let input = lazy::JsInput { value: item };
+            // Phase 3: Monomorphized call for JsInput
             if self.validator.validate(&input).is_ok() {
                 mask[i as usize] = 1;
             }
@@ -99,6 +106,7 @@ impl RodSchema {
         Ok(js_sys::Uint8Array::from(&mask[..]))
     }
 
+    /// Validates a collection and returns the transformed results.
     pub fn validate_batch(&self, collection: JsValue) -> Result<JsValue, JsValue> {
         let array = js_sys::Array::from(&collection);
         let len = array.length();
@@ -110,15 +118,11 @@ impl RodSchema {
                 value: item.clone(),
             };
 
+            // Phase 3: Monomorphized call
             match self.validator.validate(&input) {
                 Ok(rod_val) => {
-                    if let RodValue::Lazy(inner) = &rod_val {
-                        if let Some(orig) = inner.get_js_value() {
-                            results.set(i, orig);
-                            continue;
-                        }
-                    }
-                    results.set(i, serde_wasm_bindgen::to_value(&rod_val.to_json())?);
+                    let data_js = self.rod_to_js(rod_val);
+                    results.set(i, data_js);
                 }
                 Err(_) => {
                     results.set(i, JsValue::NULL);
@@ -129,19 +133,18 @@ impl RodSchema {
         Ok(results.into())
     }
 
-    // High-performance success wrapper (No Serde)
     fn make_success(&self, data: JsValue) -> JsValue {
         let obj = js_sys::Object::new();
-        js_sys::Reflect::set(&obj, &"success".into(), &JsValue::TRUE).unwrap();
-        js_sys::Reflect::set(&obj, &"data".into(), &data).unwrap();
+        let _ = js_sys::Reflect::set(&obj, &"success".into(), &JsValue::TRUE);
+        let _ = js_sys::Reflect::set(&obj, &"data".into(), &data);
         obj.into()
     }
 
     fn make_error(&self, err: rod::error::RodError) -> JsValue {
         let obj = js_sys::Object::new();
-        js_sys::Reflect::set(&obj, &"success".into(), &JsValue::FALSE).unwrap();
+        let _ = js_sys::Reflect::set(&obj, &"success".into(), &JsValue::FALSE);
         let err_js = serde_wasm_bindgen::to_value(&err).unwrap();
-        js_sys::Reflect::set(&obj, &"error".into(), &err_js).unwrap();
+        let _ = js_sys::Reflect::set(&obj, &"error".into(), &err_js);
         obj.into()
     }
 
@@ -150,9 +153,9 @@ impl RodSchema {
             value: data.clone(),
         };
 
+        // Phase 3: Monomorphized call for JsInput
         match self.validator.validate(&input) {
             Ok(rod_val) => {
-                // Use the optimized recursive converter
                 let data_js = self.rod_to_js(rod_val);
                 Ok(self.make_success(data_js))
             }
@@ -165,6 +168,7 @@ impl RodSchema {
             .map_err(|e| make_err_obj("SerializationError", &format!("{}", e)))?;
 
         let input = wrap(&json_data);
+        // Phase 3: Monomorphized call for JsonInput
         let res = match self.validator.validate(&input) {
             Ok(rod_val) => {
                 let data_js = self.rod_to_js(rod_val);
