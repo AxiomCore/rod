@@ -130,6 +130,18 @@ impl<'a> RodInput<'a> for JsInput {
     }
 
     fn to_json(&self) -> serde_json::Value {
-        serde_wasm_bindgen::from_value(self.value.clone()).unwrap_or(serde_json::Value::Null)
+        // Robustness Fix: Use JSON.stringify to detect circular references or valid JSON structure.
+        // This relies on the JS engine's cycle detection which throws an error we can catch.
+        match js_sys::JSON::stringify(&self.value) {
+            Ok(js_str) => {
+                let s: String = js_str.into();
+                // We know it's valid JSON string now, so we parse it to Serde Value
+                serde_json::from_str(&s).unwrap_or(serde_json::Value::Null)
+            }
+            Err(_) => {
+                // If JSON.stringify failed (e.g. cycle), we return Null instead of panicking/stack-overflowing.
+                serde_json::Value::Null
+            }
+        }
     }
 }

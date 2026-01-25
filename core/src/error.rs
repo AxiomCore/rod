@@ -1,5 +1,6 @@
 use serde::Serialize;
 use serde_json::Value;
+use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::fmt;
 use thiserror::Error;
@@ -126,9 +127,12 @@ impl<'a> fmt::Display for PathSegment<'a> {
 
 const MAX_DEPTH: usize = 256;
 
+// Optimization: Use SmallVec to keep common paths on the stack
+type PathVec<'a> = SmallVec<[PathSegment<'a>; 8]>;
+
 pub struct ValidationContext<'a> {
     pub issues: Vec<RodIssue>,
-    pub path: Vec<PathSegment<'a>>,
+    pub path: PathVec<'a>,
     pub mode: ValidationMode,
     pub depth: usize,
 }
@@ -137,7 +141,7 @@ impl<'a> ValidationContext<'a> {
     pub fn new() -> Self {
         Self {
             issues: Vec::with_capacity(4),
-            path: Vec::with_capacity(16),
+            path: SmallVec::new(),
             mode: ValidationMode::All,
             depth: 0,
         }
@@ -150,6 +154,7 @@ impl<'a> ValidationContext<'a> {
 
     /// Fork a context for trial validation (e.g. Union options).
     /// Critical: Inherits depth to prevent recursion attacks.
+    /// Optimization: Cloning SmallVec is cheaper than Vec for shallow paths.
     pub fn fork(&self) -> Self {
         Self {
             issues: Vec::with_capacity(4),

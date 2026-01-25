@@ -41,7 +41,40 @@ impl<'a> PartialEq for RodValue<'a> {
             (Self::Array(l0), Self::Array(r0)) => l0 == r0,
             (Self::Object(l0), Self::Object(r0)) => l0 == r0,
             (Self::Json(l0), Self::Json(r0)) => l0 == r0,
-            (a, b) => a.to_json() == b.to_json(),
+
+            // Optimization: Lazy vs Primitive comparison without serialization
+            (Self::Lazy(l), Self::String(r)) | (Self::String(r), Self::Lazy(l)) => {
+                l.as_str().map_or(false, |s| s == r.clone())
+            }
+            (Self::Lazy(l), Self::Number(r)) | (Self::Number(r), Self::Lazy(l)) => {
+                l.as_f64().map_or(false, |n| n == *r)
+            }
+            (Self::Lazy(l), Self::Boolean(r)) | (Self::Boolean(r), Self::Lazy(l)) => {
+                l.as_bool().map_or(false, |b| b == *r)
+            }
+            (Self::Lazy(l), Self::Null) | (Self::Null, Self::Lazy(l)) => {
+                l.get_type() == DataType::Null
+            }
+
+            // Optimization: Lazy vs Json Primitive
+            (Self::Lazy(l), Self::Json(Value::String(r)))
+            | (Self::Json(Value::String(r)), Self::Lazy(l)) => {
+                l.as_str().map_or(false, |s| s.as_ref() == r)
+            }
+            (Self::Lazy(l), Self::Json(Value::Number(r)))
+            | (Self::Json(Value::Number(r)), Self::Lazy(l)) => r
+                .as_f64()
+                .map_or(false, |rn| l.as_f64().map_or(false, |ln| ln == rn)),
+            (Self::Lazy(l), Self::Json(Value::Bool(r)))
+            | (Self::Json(Value::Bool(r)), Self::Lazy(l)) => l.as_bool().map_or(false, |b| b == *r),
+            (Self::Lazy(l), Self::Json(Value::Null)) | (Self::Json(Value::Null), Self::Lazy(l)) => {
+                l.get_type() == DataType::Null
+            }
+
+            // SAFETY: Return false for complex Lazy comparisons to avoid implicit
+            // expensive serialization (DoS vector).
+            // If you need to compare full objects, deserialize them explicitly.
+            _ => false,
         }
     }
 }
@@ -52,19 +85,11 @@ impl<'a> RodValue<'a> {
             RodValue::String(s) => Some(s.as_ref()),
             RodValue::Json(Value::String(s)) => Some(s.as_str()),
             RodValue::Lazy(i) => i.as_str().map(|c| {
-                // This lifetime hack is risky with Cow,
-                // but usually we consume the value immediately.
-                // For proper lifetime support we should return Cow.
-                // However, signature returns &str.
-                // We cannot return reference to temporary Cow.
-                // We fallback to None here as accessors on RodValue are limited.
-                // Use into_owned/to_json if needed for Lazy.
-                // OR: Change this method to return Cow.
-                // For now, simple logic:
-                // If it is borrowed, return.
+                // Return generic empty string for owned Cow to satisfy lifetime signature
+                // Use into_owned/to_json if strict ownership is needed
                 match c {
                     Cow::Borrowed(b) => b,
-                    Cow::Owned(_) => "", // Cannot return reference to owned temporary
+                    Cow::Owned(_) => "",
                 }
             }),
             _ => None,
@@ -155,8 +180,6 @@ impl<'a> RodInput<'a> for RodValueInput<'a> {
     fn get_js_value(&self) -> Option<wasm_bindgen::JsValue> {
         match self.0 {
             RodValue::Lazy(i) => i.get_js_value(),
-            // If the value is already a Json variant containing a JsValue handle
-            // (though rare in core), we could handle it here too.
             _ => None,
         }
     }
