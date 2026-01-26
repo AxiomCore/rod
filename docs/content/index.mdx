@@ -1,33 +1,48 @@
 ---
-title: "Introduction"
-description: "Rust-first schema validation with static type inference and zero-copy performance"
+title: Introduction
+description: The Write-Once, Validate-Anywhere Schema Library.
 ---
 
-# Rod
+# Introduction
 
-**Rust-first schema validation with static type inference and zero-copy performance.**
+**Rod** is a high-performance, cross-platform schema validation library powered by Rust. It allows you to define validation logic once and run it consistently across your entire stack: **Rust** backends, **JavaScript/TypeScript** frontends (via WASM), and **Python** data pipelines (via PyO3).
 
-Rod is a runtime data validation and schema definition library for Rust, heavily inspired by the ergonomics and power of Zod. It allows you to build complex type-safe validators at runtime using a chainable builder API.
+## The Problem: Schema Drift
 
-### Features
+In modern full-stack development, validation logic is often duplicated:
+1.  **Backend (Rust/Go):** Enforces data integrity before saving to DB.
+2.  **Frontend (TypeScript):** Provides immediate feedback to users (e.g., Zod).
+3.  **Data/ML (Python):** Cleans datasets (e.g., Pydantic).
 
--   **Zod-like Ergonomics:** A familiar and expressive builder API.
--   **Zero-Copy Architecture:** High-performance validation that avoids memory allocation by operating on borrowed data.
--   **FFI-Ready:** The `RodInput` trait allows for easy integration with other languages like Python, JavaScript, and Dart.
--   **Detailed Error Reporting:** Collects a rich list of validation issues, perfect for API responses and form validation.
--   **Runtime Schema Definition:** Build dynamic schemas, even from sources like YAML or JSON.
+Keeping these three layers in sync is manual, error-prone, and leads to "Schema Drift"—where the frontend thinks an email is valid, but the backend rejects it.
 
-## Installation
+## The Rod Solution
 
-Add Rod to your project's dependencies:
+Rod moves the validation logic into a shared **Rust Core**. This core is compiled into native binaries, WebAssembly, and Python extensions.
 
-```bash
-cargo add rod
-```
+- **Consistent:** A `uuid()` check in the browser uses the exact same byte-level logic as the backend.
+- **Portable:** Share schemas via YAML specifications or builder patterns.
+- **Zero-Copy Architecture:** Rod attempts to validate data in-place without serializing it to an intermediate format first.
 
-## Requirements
+## Performance Reality Check
 
-Rod is built for modern Rust and leverages its powerful type system. Ensure you have a recent version of the Rust toolchain installed.
-```bash
-rustup update
-```
+Rod prioritizes **consistency** and **portability**. While the Rust core is incredibly fast (nanosecond-scale), calling Rod from JavaScript or Python involves a "Bridge Tax"—the overhead of crossing the Foreign Function Interface (FFI).
+
+| Environment | Best Use Case | Performance Profile |
+| :--- | :--- | :--- |
+| **Native Rust** | High-performance backends | **🚀 Ultra Fast** (Comparable to handwritten checks) |
+| **JavaScript** | Consistency-critical apps, Batch processing | **⚠️ Moderate** (Slower than Zod for small objects due to FFI overhead) |
+| **Python** | Shared logic with backend | **⚠️ Moderate** (Slower than Pydantic for simple iteration) |
+
+<Callout type="warn" title="When NOT to use Rod">
+If your <strong>only</strong> goal is raw speed for validating small, simple objects in the browser (e.g., a simple login form), libraries like <strong>Zod</strong> will be faster because they run directly inside the JavaScript V8 engine without the overhead of WASM communication.
+
+Choose Rod when you need <strong>guaranteed consistency</strong> across languages or need to validate <strong>massive datasets</strong> efficiently.
+</Callout>
+
+## Key Features
+
+- **Zod-like API:** Fluent builder pattern (`rod.string().min(5)`) familiar to TypeScript developers.
+- **Cross-Platform:** Works in Node.js, Browsers, Rust, and Python.
+- **Rich Primitives:** Built-in support for UUIDs, CUIDs, IP addresses, URLs, and Datetimes.
+- **Batch Optimization:** Specialized methods to validate arrays of primitives via bitmasks, bypassing per-item bridge costs.

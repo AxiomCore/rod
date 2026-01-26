@@ -1,15 +1,27 @@
 {
     "root": true,
     "pages": [
-        "---Getting Started---",
         "index",
-        "basics",
-        "---API Reference---",
-        "api",
-        "---Advanced Guides---",
-        "error-handling",
-        "effects",
-        "schema-from-yaml",
-        "zero-copy-ffi"
+        "installation",
+        "quick-start",
+        "---Primitives---",
+        "strings",
+        "numbers",
+        "booleans",
+        "dates",
+        "---Collections---",
+        "objects",
+        "arrays",
+        "sets-and-maps",
+        "tuples",
+        "---Logic & Flow---",
+        "unions",
+        "enums",
+        "lazy-eval",
+        "transformations",
+        "---Deep Dive---",
+        "architecture",
+        "benchmarks",
+        "performance-guide"
     ]
 }

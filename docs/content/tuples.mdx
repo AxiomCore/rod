@@ -1,0 +1,40 @@
+---
+title: Tuples
+description: Fixed-length arrays with distinct types.
+---
+
+# Tuples
+
+A Tuple is an array with a fixed number of elements, where each position has a specific schema.
+
+```typescript
+const Coordinate = rod.tuple([
+  rod.number(), // Latitude
+  rod.number()  // Longitude
+]);
+```
+
+## Validation Rules
+
+- Input must be an array.
+- Length must match exactly.
+- Each item at index `i` is validated against schema `i`.
+
+## Example
+
+```typescript
+const UserTuple = rod.tuple([
+  rod.string(), // Name
+  rod.number(), // Age
+  rod.boolean() // IsAdmin
+]);
+
+// ✅ Valid
+UserTuple.parse(["John", 30, true]);
+
+// ❌ Invalid (Wrong types)
+UserTuple.parse([30, "John", true]);
+
+// ❌ Invalid (Too short)
+UserTuple.parse(["John", 30]);
+```

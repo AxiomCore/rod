@@ -1,0 +1,59 @@
+---
+title: Transformations
+description: Refining validation and transforming outputs.
+---
+
+# Transformations & Refinements
+
+Rod allows you to not just validate types, but also enforce custom rules (`refine`) and modify data (`transform`).
+
+<Callout type="warn">
+**Performance Note:** Using `refine` or `transform` forces Rod to switch to a slower execution path because it cannot just check memory layouts; it must execute your custom code. In JavaScript/Python, this means crossing the bridge multiple times.
+</Callout>
+
+## Refine (Custom Validation)
+
+Use `.refine` (or `rod.refine` in Python) to add custom logic that cannot be expressed with standard validators.
+
+```typescript
+const Password = rod.string().refine((val) => {
+    // Check if password has a special char
+    return val.includes("!");
+}, "Password must contain '!'");
+
+Password.parse("secure123"); // ❌ Error
+Password.parse("secure!123"); // ✅ OK
+```
+
+## Transform (Modifying Data)
+
+Use `.transform` to map the data to a new format *after* validation succeeds.
+
+```typescript
+const ToString = rod.number().transform((val) => {
+    return `Value is ${val}`;
+});
+
+const result = ToString.parse(42); 
+// result === "Value is 42"
+```
+
+## Coercion (Pre-Process)
+
+A common pattern is "Coercion" (e.g., turning query string `"123"` into number `123`). Rod provides specialized `rod.coerce` helpers for this.
+
+```typescript
+import { rod } from 'rod-js';
+
+// Accepts string "123" -> returns number 123
+const CoercedNumber = rod.coerce.number(); 
+
+CoercedNumber.parse("100"); // 100
+CoercedNumber.parse(100);   // 100
+CoercedNumber.parse("abc"); // ❌ Error
+```
+
+Supported coercions:
+- `rod.coerce.string()`: Converts numbers/booleans to string.
+- `rod.coerce.number()`: Parses strings to float/int.
+- `rod.coerce.boolean()`: Converts `"true"`/`"false"` strings to boolean.

@@ -1,0 +1,82 @@
+---
+title: Strings
+description: Validation rules for text data.
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+# Strings
+
+String validation is the most common task in schema definition. Rod provides a comprehensive suite of validators for lengths, formats (email, URL), and patterns.
+
+```typescript
+const schema = rod.string().min(5).email();
+```
+
+## Length Validations
+
+Enforce character counts. Note that Rod counts **Unicode characters**, not bytes, ensuring emojis (`Length: 1`) are handled correctly across all languages.
+
+- `.min(length: number)`: Minimum characters (inclusive).
+- `.max(length: number)`: Maximum characters (inclusive).
+- `.length(limit: number)`: Exact length required.
+
+```typescript
+rod.string().min(3).max(20);
+rod.string().length(10);
+```
+
+## Formats
+
+Rod includes built-in Regex checks for common data formats.
+
+- `.email()`: Standard email validation.
+- `.url()`: Checks if string starts with `http://` or `https://`.
+- `.uuid()`: Validates UUID v4 format.
+- `.cuid()`: Validates collision-resistant ids (CUID).
+- `.ip()`: Validates IPv4 or IPv6 addresses.
+- `.datetime()`: Validates ISO 8601 strings (e.g., `2023-01-01T00:00:00Z`).
+
+<Callout type="info">
+**Performance Tip:** Built-in format validators like `.uuid()` are generally faster than writing your own Regex because they are compiled into the native Rust core.
+</Callout>
+
+## Pattern Matching & Content
+
+- `.startsWith(prefix: string)`
+- `.endsWith(suffix: string)`
+- `.includes(substring: string)`
+- `.regex(pattern: string)`
+- `.trim()`: Trims whitespace from both ends *before* validation.
+
+<Callout type="warn">
+**Regex Performance Warning:** 
+In the current version of Rod, passing a regex pattern via `.regex("...")` compiles the regular expression on *every validation call*. This creates a significant performance penalty compared to native Javascript RegEx or Zod.
+
+**Recommendation:** For high-performance hot paths, prefer using `.startsWith`, `.endsWith`, or `.includes` if possible, as these are optimized string operations.
+</Callout>
+
+## Example
+
+<Tabs items={['TypeScript', 'Python']}>
+<Tab value="TypeScript">
+```typescript
+const UserSchema = rod.object({
+  id: rod.string().uuid(),
+  homepage: rod.string().url().optional(),
+  bio: rod.string().max(160).trim(),
+  role: rod.string().regex("^(admin|user|guest)$")
+});
+```
+</Tab>
+<Tab value="Python">
+```python
+user_schema = rod.object({
+    "id": rod.string().uuid(),
+    "homepage": rod.string().url().optional(),
+    "bio": rod.string().max(160).trim(),
+    "role": rod.string().regex("^(admin|user|guest)$")
+})
+```
+</Tab>
+</Tabs>

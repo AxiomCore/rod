@@ -1,0 +1,65 @@
+---
+title: Sets & Maps
+description: Validating ES6 Sets and Maps.
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+# Sets & Maps
+
+<Callout type="warn">
+**JSON Compatibility:** Because Rod's core uses JSON-compatible types for cross-language support, Sets and Maps are validated as **Arrays** of values or entries.
+</Callout>
+
+## Sets (`rod.set`)
+
+Validates an array of unique values.
+
+- Checks that the input is an array.
+- Checks that all items are unique (based on JSON stringification).
+- Validates each item against the schema.
+
+```typescript
+const UniqueTags = rod.set(rod.string()).min(1);
+
+// ✅ Valid
+UniqueTags.parse(["a", "b", "c"]);
+
+// ❌ Invalid (Duplicate)
+UniqueTags.parse(["a", "a", "b"]);
+```
+
+## Maps (`rod.map`)
+
+Validates an array of `[key, value]` pairs (Entries).
+
+```typescript
+const ConfigMap = rod.map(
+  rod.string(), // Key Schema
+  rod.number()  // Value Schema
+);
+
+// Input must be array of entries
+const input = [
+  ["timeout", 5000],
+  ["retries", 3]
+];
+
+ConfigMap.parse(input);
+```
+
+## Records (`rod.record`)
+
+If you want to validate a standard JSON Object where keys are dynamic (a dictionary), use `rod.record()` instead of `rod.map()`.
+
+```typescript
+// Keys are strings, Values are numbers
+const Scores = rod.record(rod.string(), rod.number());
+
+const input = {
+  "player1": 100,
+  "player2": 250
+};
+
+Scores.parse(input);
+```

@@ -1,0 +1,37 @@
+---
+title: Enums
+description: Validating against a fixed set of string values.
+---
+
+# Enums
+
+Enums are a shortcut for creating a union of string literals. They are useful for status fields, roles, or configuration options.
+
+```typescript
+const Role = rod.enum("admin", "user", "guest");
+
+Role.parse("admin"); // ✅
+Role.parse("super-admin"); // ❌ Error: Invalid enum value
+```
+
+## Native Enums vs Zod Enums
+
+Currently, Rod's `enum()` behaves like Zod's `z.enum([...])`. It accepts a list of strings.
+
+If you are using TypeScript `enum` constructs, you should extract the values:
+
+```typescript
+enum Colors {
+  Red = "RED",
+  Blue = "BLUE"
+}
+
+// Pass values to Rod
+const ColorSchema = rod.enum(Colors.Red, Colors.Blue);
+// OR
+const ColorSchema = rod.enum(...Object.values(Colors));
+```
+
+## Performance
+
+Internally, Rod optimizes enums. It checks the input string against the allowed list without creating intermediate validators. It is significantly faster than writing `rod.union(rod.literal("a"), rod.literal("b")...)`.

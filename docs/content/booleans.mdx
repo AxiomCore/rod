@@ -1,0 +1,34 @@
+---
+title: Booleans
+description: True or false validation.
+---
+
+# Booleans
+
+The boolean validator is simple: it checks if the input is strictly `true` or `false`.
+
+```typescript
+const schema = rod.boolean();
+```
+
+## Truthy/Falsy vs Strict Boolean
+
+Rod is **strict**. It does not consider `0`, `1`, `""`, or `null` to be booleans.
+
+- ✅ `true`
+- ✅ `false`
+- ❌ `1` (Number)
+- ❌ `"true"` (String)
+- ❌ `null` (Null)
+
+## Example
+
+```typescript
+const FeatureFlagSchema = rod.object({
+  isEnabled: rod.boolean(),
+  isBeta: rod.boolean().optional()
+});
+
+FeatureFlagSchema.parse({ isEnabled: true }); // OK
+FeatureFlagSchema.parse({ isEnabled: "true" }); // Error
+```
