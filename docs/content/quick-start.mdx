@@ -1,146 +1,81 @@
 ---
 title: Quick Start
-description: Validating your first object with Rod.
+description: Your first validation with Rod.
 ---
 
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 # Quick Start
 
-Rod uses a fluent "Builder API" that should feel familiar if you have used libraries like Zod or Joi. The API is designed to look nearly identical across all supported languages.
+Rod provides a nearly identical API across all languages. Here is how to validate a simple User object.
 
-Let's validate a simple `User` object that requires:
-- A `name` (String, min 3 chars)
-- An `age` (Number, integer, must be 18+)
-- An `email` (Valid email format)
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    use rod_rs::{rod_obj, string, number, RodValidator};
+    use serde_json::json;
 
-<Tabs items={['JavaScript / TypeScript', 'Python', 'Rust']}>
+    fn main() {
+        let schema = rod_obj! {
+            name: string().min(3),
+            age: number().int().min(18.0)
+        };
 
-<Tab value="JavaScript / TypeScript">
+        let data = json!({ "name": "Rod", "age": 25 });
+        let input = rod_rs::io::json::wrap(&data);
 
-You must initialize the WASM module once before using Rod in an async context.
-
-```typescript
-import { rod } from 'rod-js';
-
-// 1. Initialize WASM (Required once)
-await rod.init();
-
-// 2. Define the Schema
-const UserSchema = rod.object({
-  name: rod.string().min(3),
-  age: rod.number().int().min(18),
-  email: rod.string().email(),
-  tags: rod.array(rod.string()).min(1)
-}).strict(); // Strip unknown keys
-
-// 3. The Data
-const data = {
-  name: "Rod Developer",
-  age: 25,
-  email: "hello@rod.rs",
-  tags: ["rust", "wasm"]
-};
-
-// 4. Validate
-try {
-  // 'lazy' mode avoids full serialization (faster for large objects)
-  const result = UserSchema.parse(data, { mode: 'lazy' });
-  console.log("Valid:", result);
-} catch (e) {
-  console.error("Validation failed:", e.message);
-}
-```
-
-</Tab>
-
-<Tab value="Python">
-
-```python
-import rod
-
-# 1. Define the Schema
-UserSchema = rod.object({
-    "name": rod.string().min(3),
-    "age": rod.number().int().min(18),
-    "email": rod.string().email(),
-    "tags": rod.array(rod.string()).min(1)
-}).strict()
-
-# 2. The Data
-data = {
-    "name": "Rod Developer",
-    "age": 25,
-    "email": "hello@rod.rs",
-    "tags": ["rust", "wasm"]
-}
-
-# 3. Validate
-try:
-    result = UserSchema.parse(data)
-    print(f"Valid: {result}")
-except ValueError as e:
-    print(f"Validation failed: {e}")
-
-# Or use safe_parse
-result = UserSchema.safe_parse(data)
-if result["success"]:
-    print(result["data"])
-else:
-    print(result["error"])
-```
-
-</Tab>
-
-<Tab value="Rust">
-
-In Rust, we often map the validation result to a strictly typed struct, but Rod can also validate `serde_json::Value` dynamically.
-
-```rust
-use rod::{RodValidator, number, object, string, array};
-use serde_json::json;
-
-fn main() {
-    // 1. Define the Schema
-    // In Rust, we box validators to handle dynamic types
-    let user_schema = object(std::collections::HashMap::from([
-        ("name".to_string(), Box::new(string().min(3)) as Box<dyn RodValidator>),
-        ("age".to_string(), Box::new(number().int().min(18.0)) as Box<dyn RodValidator>),
-        ("email".to_string(), Box::new(string().email()) as Box<dyn RodValidator>),
-        ("tags".to_string(), Box::new(array(string()).min(1)) as Box<dyn RodValidator>),
-    ]));
-
-    // 2. The Data (serde_json)
-    let data = json!({
-        "name": "Rod Developer",
-        "age": 25,
-        "email": "hello@rod.rs",
-        "tags": ["rust", "wasm"]
-    });
-
-    // 3. Validate
-    // wrap() creates the RodInput adapter for serde_json
-    let input = rod::io::json::wrap(&data);
-    
-    match user_schema.validate(&input) {
-        Ok(val) => println!("Valid: {:?}", val.to_json()),
-        Err(e) => println!("Error: {:?}", e.issues),
+        match schema.validate(&input) {
+            Ok(_) => println!("Valid!"),
+            Err(e) => println!("Invalid: {:?}", e.issues),
+        }
     }
-}
-```
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    import { rod } from 'rod-js';
 
-*Note: The Rust API is slightly more verbose due to strict type checking and Box usage. We provide macros like `rod_obj!` to simplify this.*
+    async function run() {
+        await rod.init(); // Initialize WASM engine
 
-</Tab>
+        const schema = rod.object({
+            name: rod.string().min(3),
+            age: rod.number().int().min(18)
+        });
 
+        const data = { name: "Rod", age: 25 };
+        
+        try {
+            const result = schema.parse(data);
+            console.log("Valid:", result);
+        } catch (e) {
+            console.error("Invalid:", e.message);
+        }
+    }
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    import rod
+
+    schema = rod.object({
+        "name": rod.string().min(3),
+        "age": rod.number().int().min(18)
+    })
+
+    data = {"name": "Rod", "age": 25}
+
+    try:
+        result = schema.parse(data)
+        print("Valid:", result)
+    except ValueError as e:
+        print("Invalid:", e)
+    ```
+  </Tab>
 </Tabs>
 
-## The "Zero-Copy" Concept
+## Core Concepts
 
-Notice that in the examples above, we didn't have to convert the data into a specific "Rod" format manually.
-
-- In **JavaScript**, Rod read the `data` object directly using the `Reflect` API via WebAssembly.
-- In **Python**, Rod read the `dict` directly using the Python C-API.
-- In **Rust**, Rod read the `serde_json::Value` directly.
-
-This is Rod's **Abstract Input** system in action. It validates data where it lives, rather than forcing you to move data to the validator.
+1. **The Core:** All validation logic happens in a pre-compiled Rust binary.
+2. **The Adapter:** Rod uses a "Zero-Copy" adapter system to read your language's native objects (JS objects, Python dicts) without converting them to JSON first.
+3. **Consistency:** Because it's the same binary, a regex or email check will never behave differently between your React frontend and your Python API.

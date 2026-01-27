@@ -1,71 +1,87 @@
 ---
 title: Unions
-description: Handling multiple possible types.
+description: Handling multiple possible schemas.
 ---
 
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 # Unions
 
-Unions allow a field to match one of several schemas. Rod provides two types of unions: Standard Unions and Discriminated Unions.
+Unions allow a value to match one of several possible schemas.
 
-## Standard Unions (`rod.union`)
+## Standard Unions
 
-Rod attempts to validate the input against each schema in the list, **in order**. The first one that succeeds is returned.
+Standard unions try each schema sequentially. The first one that succeeds is returned.
 
-```typescript
-const StringOrNumber = rod.union(
-    rod.string(), 
-    rod.number()
-);
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    use rod_rs::union;
+    
+    let schema = union(vec![
+        Box::new(string()),
+        Box::new(number())
+    ]);
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    import { rod } from 'rod-js';
+    
+    const schema = rod.union([
+        rod.string(),
+        rod.number()
+    ]);
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    import rod
+    
+    schema = rod.union(
+        rod.string(),
+        rod.number()
+    )
+    ```
+  </Tab>
+</Tabs>
 
-StringOrNumber.parse("hello"); // ✅ String
-StringOrNumber.parse(42);      // ✅ Number
-StringOrNumber.parse(true);    // ❌ Error
-```
+## Discriminated Unions
 
-<Callout type="warn">
-**Performance Warning:** Standard unions are $O(N)$ operations. If you have a union of 10 complex objects, Rod might have to run full validation 10 times to find a match (or fail). For complex data structures, this is slow.
-</Callout>
+For objects sharing a common "tag" or "type" field, Discriminated Unions provide $O(1)$ performance by jumping directly to the correct validator.
 
-## Discriminated Unions (`rod.discriminatedUnion`)
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    use rod_rs::discriminated_union;
+    
+    let circle = rod_obj! { type: literal("circle"), radius: number() };
+    let square = rod_obj! { type: literal("square"), side: number() };
 
-This is the **optimized** way to handle polymorphic data. If your objects share a common field (like `type`, `kind`, or `status`), Rod can pick the correct validator immediately ($O(1)$) without checking the others.
+    let schema = discriminated_union("type", vec![
+        ("circle", Box::new(circle)),
+        ("square", Box::new(square))
+    ]);
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    import { rod } from 'rod-js';
+    
+    const circle = rod.object({ type: rod.literal("circle"), radius: rod.number() });
+    const square = rod.object({ type: rod.literal("square"), side: rod.number() });
 
-**This is highly recommended for performance.**
+    const schema = rod.discriminatedUnion("type", [circle, square]);
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    import rod
+    
+    circle = rod.object({ "type": rod.literal("circle"), "radius": rod.number() })
+    square = rod.object({ "type": rod.literal("square"), "side": rod.number() })
 
-```typescript
-const Circle = rod.object({
-  kind: rod.literal("circle"),
-  radius: rod.number()
-});
-
-const Square = rod.object({
-  kind: rod.literal("square"),
-  side: rod.number()
-});
-
-// "kind" is the discriminator key
-const Shape = rod.discriminatedUnion("kind", [
-  Circle,
-  Square
-]);
-
-// 🚀 Rod instantly knows to use the Square validator
-Shape.parse({ kind: "square", side: 10 });
-```
-
-### Why use Discriminated Unions?
-
-Imagine a union of 50 different event types.
-- **Standard Union:** Rod tries Schema 1, fails... Schema 2, fails... Schema 49, success. (Slow)
-- **Discriminated Union:** Rod looks at `event.type`, sees `"login_success"`, and jumps directly to Schema 49. (Fast)
-
-```typescript
-// Example: Redux/Event Sourcing Actions
-const Action = rod.discriminatedUnion("type", [
-  rod.object({ type: rod.literal("LOGIN"), payload: UserSchema }),
-  rod.object({ type: rod.literal("LOGOUT") }),
-  // ... 50 more
-]);
-```
+    schema = rod.discriminated_union("type", [circle, square])
+    ```
+  </Tab>
+</Tabs>

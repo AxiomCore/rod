@@ -1,5 +1,5 @@
-use rod::from_yaml;
-use rod::io::json::wrap;
+use rod_rs::from_yaml;
+use rod_rs::io::json::wrap;
 use serde_json::json;
 
 #[test]
@@ -37,11 +37,10 @@ properties:
     });
 
     let err = schema.validate(&wrap(&invalid)).unwrap_err();
-    assert!(
-        err.issues
-            .iter()
-            .any(|i| matches!(i.details, rod::error::RodIssueCode::UnrecognizedKeys { .. }))
-    );
+    assert!(err.issues.iter().any(|i| matches!(
+        i.details,
+        rod_rs::error::RodIssueCode::UnrecognizedKeys { .. }
+    )));
 }
 
 #[test]

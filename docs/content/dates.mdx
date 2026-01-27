@@ -7,58 +7,53 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 # Dates
 
-The `rod.date()` validator expects **timestamp inputs** (integers or floats representing milliseconds since the Unix Epoch).
+The `date` validator primarily works with **Unix timestamps** (milliseconds).
 
-<Callout type="warn" title="Date Object Support">
-Rod currently validates <strong>numeric timestamps</strong> or specific string formats if configured. It does <strong>not</strong> natively inspect JavaScript `Date` objects or Python `datetime` objects by default in this version; it treats them based on their underlying representation passed to the bridge.
-
-For best results, pass timestamps (numbers) or ISO strings.
-</Callout>
-
-## Range Validation
-
-- `.min(timestamp: number)`: Must be after this date.
-- `.max(timestamp: number)`: Must be before this date.
-
-## Example: Validating a "Past" Date
-
-To validate that a date is in the past, you pass the current timestamp to `.max()`.
-
-<Tabs items={['TypeScript', 'Python']}>
-<Tab value="TypeScript">
-```typescript
-const now = Date.now();
-
-// Date must be between 2000 and Now
-const BirthDateSchema = rod.date()
-  .min(new Date("2000-01-01").getTime())
-  .max(now);
-
-// Pass the timestamp, not the Date object
-BirthDateSchema.parse(new Date("2005-05-05").getTime()); 
-```
-</Tab>
-<Tab value="Python">
-```python
-import time
-from datetime import datetime
-
-now = int(time.time() * 1000) # milliseconds
-y2k = int(datetime(2000, 1, 1).timestamp() * 1000)
-
-birth_date_schema = rod.date().min(y2k).max(now)
-
-# Validates timestamp integer
-birth_date_schema.parse(1609459200000) 
-```
-</Tab>
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    use rod_rs::date;
+    
+    // Date between Year 2000 and Year 2025
+    let schema = date().min(946684800000).max(1735689600000);
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    import { rod } from 'rod-js';
+    
+    const schema = rod.date()
+      .min(new Date("2000-01-01").getTime())
+      .max(new Date("2025-01-01").getTime());
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    import rod
+    
+    schema = rod.date().min(946684800000).max(1735689600000)
+    ```
+  </Tab>
 </Tabs>
 
-## String Dates
+## ISO Strings
 
-To validate **string** dates (like "2023-12-25"), use `rod.string().datetime()` instead of `rod.date()`.
+If you are validating string-formatted dates (e.g., `"2024-01-01T00:00:00Z"`), use the string validator's datetime helper instead.
 
-```typescript
-const isoSchema = rod.string().datetime();
-isoSchema.parse("2023-01-01T12:00:00Z"); // ✅ OK
-```
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    string().datetime()
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    rod.string().datetime()
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    rod.string().datetime()
+    ```
+  </Tab>
+</Tabs>

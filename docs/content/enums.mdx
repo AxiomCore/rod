@@ -3,35 +3,36 @@ title: Enums
 description: Validating against a fixed set of string values.
 ---
 
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
 # Enums
 
-Enums are a shortcut for creating a union of string literals. They are useful for status fields, roles, or configuration options.
+Enums validate that a string matches one of the allowed values in a predefined list.
 
-```typescript
-const Role = rod.enum("admin", "user", "guest");
-
-Role.parse("admin"); // ✅
-Role.parse("super-admin"); // ❌ Error: Invalid enum value
-```
-
-## Native Enums vs Zod Enums
-
-Currently, Rod's `enum()` behaves like Zod's `z.enum([...])`. It accepts a list of strings.
-
-If you are using TypeScript `enum` constructs, you should extract the values:
-
-```typescript
-enum Colors {
-  Red = "RED",
-  Blue = "BLUE"
-}
-
-// Pass values to Rod
-const ColorSchema = rod.enum(Colors.Red, Colors.Blue);
-// OR
-const ColorSchema = rod.enum(...Object.values(Colors));
-```
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    use rod_rs::enum_type;
+    
+    let schema = enum_type(vec!["admin", "user", "guest"]);
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    import { rod } from 'rod-js';
+    
+    const schema = rod.enum("admin", "user", "guest");
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    import rod
+    
+    schema = rod.enum("admin", "user", "guest")
+    ```
+  </Tab>
+</Tabs>
 
 ## Performance
 
-Internally, Rod optimizes enums. It checks the input string against the allowed list without creating intermediate validators. It is significantly faster than writing `rod.union(rod.literal("a"), rod.literal("b")...)`.
+Internally, Rod optimizes enums by checking the input string against the allowed list directly, bypassing the overhead of standard union trial-and-error.

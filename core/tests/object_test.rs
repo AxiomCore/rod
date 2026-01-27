@@ -1,5 +1,5 @@
-use rod::io::json::wrap;
-use rod::{
+use rod_rs::io::json::wrap;
+use rod_rs::{
     NullableExtension, OptionalExtension, RodValidator, boolean, number, record, rod_obj, string,
 };
 use serde_json::json;
@@ -7,9 +7,9 @@ use serde_json::json;
 #[test]
 fn test_macro_object() {
     // Note: 'array' needs to be imported if used inside macro,
-    // but the macro expands to `rod::types::object::object`, so imports matter.
+    // but the macro expands to `rod_rs::types::object::object`, so imports matter.
     // Let's import array here.
-    use rod::array;
+    use rod_rs::array;
 
     let schema = rod_obj! {
         name: string().min(2),

@@ -1,71 +1,94 @@
 ---
 title: Performance Guide
-description: How to make Rod fly.
+description: Optimization strategies for Rod.
 ---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 # Performance Guide
 
-Since Rod operates across language boundaries, how you use it matters more than with native libraries. Here are the best practices to minimize the "Bridge Tax."
+To get the most out of Rod, you must minimize the number of times data crosses the language boundary.
 
-## 1. Prefer `checkBatch` for Arrays
+## 1. Batching (The "Golden Rule")
 
-If you are filtering a large dataset (e.g., 100k rows) in JavaScript, do **not** use `.parse()` in a loop.
+If you have a list of items, never validate them in a loop. Use the specialized batch APIs to process the entire array in a single FFI call.
 
-❌ **Slow (High Overhead)**
-```typescript
-const results = items.map(item => Schema.parse(item));
-```
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    // Native Rust is already fast, 
+    // loops are fine.
+    for item in items {
+        schema.validate(&wrap(item))?;
+    }
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    // ✅ FAST: 1 Bridge Call
+    const mask = schema.checkBatch(largeArray);
 
-✅ **Fast (Low Overhead)**
-```typescript
-// Returns a Uint8Array bitmask (1=valid, 0=invalid)
-const mask = Schema.checkBatch(items);
-
-// Filter efficiently in JS
-const validItems = items.filter((_, i) => mask[i] === 1);
-```
-
-This reduces 100,000 FFI calls down to **1 FFI call**.
+    // ❌ SLOW: 10,000 Bridge Calls
+    largeArray.map(item => schema.parse(item));
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    # Batch processing for Python 
+    # is under development.
+    ```
+  </Tab>
+</Tabs>
 
 ## 2. Use Discriminated Unions
 
-Always prefer `rod.discriminatedUnion` over `rod.union`.
+Standard Unions are $O(N)$ because Rod must try every schema. Discriminated Unions are $O(1)$ because Rod jumps straight to the correct validator using a key.
 
-- **Standard Union:** Rod tries every schema until one works. ($O(N)$)
-- **Discriminated Union:** Rod checks one key and jumps to the correct validator. ($O(1)$)
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    // ✅ FAST
+    discriminated_union("type", vec![...])
+    
+    // ❌ SLOW
+    union(vec![...])
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    // ✅ FAST
+    rod.discriminatedUnion("type", [...])
+    
+    // ❌ SLOW
+    rod.union([...])
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    # ✅ FAST
+    rod.discriminated_union("type", [...])
+    ```
+  </Tab>
+</Tabs>
 
-## 3. Avoid Regex for Simple Checks
+## 3. String Optimizations
 
-Rod currently compiles Regex patterns on-the-fly. This is expensive.
-If you just need to check if a string starts with "http", use the native helper:
+Prefer specialized string helpers over general Regex. Rod uses optimized Rust string matching for these.
 
-❌ **Slow**
-```typescript
-rod.string().regex("^http")
-```
-
-✅ **Fast**
-```typescript
-rod.string().startsWith("http")
-```
-
-## 4. JS Parsing Modes
-
-- Use `mode: 'lazy'` (Default) for **Large Objects** where you check few fields. It avoids serializing the whole object.
-- Use `mode: 'eager'` for **Massive Arrays of Primitives** (e.g., `number[]`). Serializing an array of numbers to JSON is fast, and validating them in Rust is instant.
-
-```typescript
-// For array of 100k numbers
-NumberArray.parse(data, { mode: 'eager' });
-```
-
-## 5. When to stick with Zod/Pydantic
-
-If your application:
-- Is 100% JavaScript (Frontend only).
-- Validates tiny objects (simple forms) at high frequency.
-- Does not need to share logic with a Rust/Python backend.
-
-...then stick with **Zod**. It is specialized for V8 and will always be faster for simple cases because it lives inside the engine.
-
-Use **Rod** when **Consistency** across languages is more important than raw micro-benchmark speed.
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    string().starts_with("http") // Fast
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    rod.string().startsWith("http") // Fast
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    rod.string().starts_with("http") // Fast
+    ```
+  </Tab>
+</Tabs>

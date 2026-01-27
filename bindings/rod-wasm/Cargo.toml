@@ -8,7 +8,7 @@ description = "WASM bindings for the Rod validation library"
 crate-type = ["cdylib"]
 
 [dependencies]
-rod = { path = "../../core", features = ["non-thread-safe"] }
+rod-rs = { path = "../../core", features = ["non-thread-safe"] }
 
 js-sys = "0.3"
 wasm-bindgen = { version = "0.2", features = ["serde-serialize"] }

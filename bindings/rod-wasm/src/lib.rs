@@ -1,8 +1,8 @@
 mod lazy;
-use rod::core::validator::RodValidator;
-use rod::core::value::RodValue;
-use rod::io::json::wrap;
-use rod::schema::parser::RodSpec;
+use rod_rs::core::validator::RodValidator;
+use rod_rs::core::value::RodValue;
+use rod_rs::io::json::wrap;
+use rod_rs::schema::parser::RodSpec;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(start)]
@@ -74,7 +74,7 @@ impl RodSchema {
 
         // Pure Rust execution - Zero Bridge Calls!
         for i in 0..len {
-            let input = rod::io::json::wrap(&data[i]);
+            let input = rod_rs::io::json::wrap(&data[i]);
             if self.validator.validate(&input).is_ok() {
                 mask[i] = 1;
             }
@@ -137,7 +137,7 @@ impl RodSchema {
         obj.into()
     }
 
-    fn make_error(&self, err: rod::error::RodError) -> JsValue {
+    fn make_error(&self, err: rod_rs::error::RodError) -> JsValue {
         let obj = js_sys::Object::new();
         js_sys::Reflect::set(&obj, &"success".into(), &JsValue::FALSE).unwrap();
         let err_js = serde_wasm_bindgen::to_value(&err).unwrap();

@@ -1,5 +1,5 @@
-use rod::io::json::wrap;
-use rod::{RodValidator, map, number, set, string, tuple};
+use rod_rs::io::json::wrap;
+use rod_rs::{RodValidator, map, number, set, string, tuple};
 use serde_json::json;
 
 #[test]

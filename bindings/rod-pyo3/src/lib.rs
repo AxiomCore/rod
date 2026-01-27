@@ -4,8 +4,8 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pythonize::{depythonize, pythonize};
-use rod::core::validator::RodValidator;
-use rod::schema::parser::RodSpec;
+use rod_rs::core::validator::RodValidator;
+use rod_rs::schema::parser::RodSpec;
 
 #[pyclass(unsendable)]
 struct RodSchema {

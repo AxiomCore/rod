@@ -1,8 +1,8 @@
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple};
 use pythonize::depythonize;
-use rod::core::input::{DataType, RodInput};
-use rod::core::value::RodValue;
+use rod_rs::core::input::{DataType, RodInput};
+use rod_rs::core::value::RodValue;
 use std::borrow::Cow;
 
 #[derive(Debug, Clone)]

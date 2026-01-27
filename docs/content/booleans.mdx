@@ -3,32 +3,56 @@ title: Booleans
 description: True or false validation.
 ---
 
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
 # Booleans
 
-The boolean validator is simple: it checks if the input is strictly `true` or `false`.
+The boolean validator checks for strict `true` or `false` values.
 
-```typescript
-const schema = rod.boolean();
-```
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    use rod_rs::boolean;
+    
+    let schema = boolean();
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    import { rod } from 'rod-js';
+    
+    const schema = rod.boolean();
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    import rod
+    
+    schema = rod.boolean()
+    ```
+  </Tab>
+</Tabs>
 
-## Truthy/Falsy vs Strict Boolean
+## Strictness
 
-Rod is **strict**. It does not consider `0`, `1`, `""`, or `null` to be booleans.
+Rod is type-strict. Values like `1`, `0`, `"true"`, or `null` will fail validation unless explicit coercion is used.
 
-- ✅ `true`
-- ✅ `false`
-- ❌ `1` (Number)
-- ❌ `"true"` (String)
-- ❌ `null` (Null)
-
-## Example
-
-```typescript
-const FeatureFlagSchema = rod.object({
-  isEnabled: rod.boolean(),
-  isBeta: rod.boolean().optional()
-});
-
-FeatureFlagSchema.parse({ isEnabled: true }); // OK
-FeatureFlagSchema.parse({ isEnabled: "true" }); // Error
-```
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    boolean().validate(&wrap(&json!(1))); // ❌ Error
+    rod_rs::coerce::boolean().validate(&wrap(&json!(1))); // ✅ Result: true
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    rod.boolean().parse(1); // ❌ Error
+    rod.coerce.boolean().parse(1); // ✅ Result: true
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    rod.boolean().parse(1) # ❌ Error
+    ```
+  </Tab>
+</Tabs>

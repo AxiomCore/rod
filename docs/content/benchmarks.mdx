@@ -1,55 +1,74 @@
 ---
 title: Benchmarks
-description: Honest performance comparisons vs Zod and Pydantic.
+description: Performance comparisons vs Zod and Pydantic.
 ---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 # Benchmarks
 
-We believe in radical honesty. Rod is designed for **consistency** and **portability**, but it is not always the fastest option for every scenario due to FFI overhead.
+Rod prioritizes **consistency** and **portability**. Here is how it stacks up against native incumbents in various environments.
 
-<Callout type="info">
-**Test Environment:** Apple M2 Max, Node v20, Python 3.11.
-**Date:** Jan 2024
-</Callout>
+## Simple Object
+Validating a basic user: `{ name: "John", age: 30 }`.
 
-## Scenario 1: Simple Object
-Validating `{ name: "John", age: 30 }`.
+| Environment | Library | Time (ns) | Relative Speed |
+| :--- | :--- | :--- | :--- |
+| **JS** | **Zod** | **201 ns** | **1.0x (Fastest)** |
+| **Python** | **Pydantic** | **591 ns** | 2.9x slower |
+| **Rust** | **Rod (Native)** | **217 ns** | 1.1x slower |
+| JS/WASM | Rod (Lazy) | 2,001 ns | 10x slower |
+| Python | Rod (PyO3) | 4,510 ns | 22x slower |
 
-| Library | Time (ns) | Relative Speed |
+## Batch Processing (10k items)
+Validating a massive array of integers.
+
+| Environment | API | Time (ms) |
 | :--- | :--- | :--- |
-| **Zod (JS)** | **201 ns** | **1.0x (Fastest)** |
-| **Pydantic (Py)** | **591 ns** | 2.9x slower |
-| Rod (Native Rust) | 217 ns | ~1.0x |
-| Rod (JS WASM) | 2,001 ns | 10x slower |
-| Rod (Python) | 4,510 ns | 22x slower |
+| **Rust** | **Rod Native** | **0.11 ms** |
+| **JS** | **Zod** | **0.43 ms** |
+| JS/WASM | Rod (checkBatch) | 0.27 ms |
+| Python | Pydantic | 0.08 ms |
+| Python | Rod (PyO3) | 2.99 ms |
 
-**Verdict:** For tiny objects, **use Zod (JS)** or **Pydantic (Py)**. The overhead of calling Rod is higher than the validation itself.
+## Benchmark Scenarios
 
-## Scenario 2: Heavy Logic & Batching
-Validating arrays of 1000 items with UUIDs and Email formats.
-
-| Library | Time per Item | Notes |
-| :--- | :--- | :--- |
-| **Zod** | **0.9 µs** | Optimized V8 Regex |
-| **Rod (checkBatch)** | **2.7 µs** | Using Bitmask API |
-| Rod (JS Loop) | 7.0 µs | High Bridge Tax |
-
-**Verdict:** Rod closes the gap significantly when using the `checkBatch` API, but Zod's specialized V8 optimizations still win for pure JS execution.
-
-## Scenario 3: Native Performance
-If you are running Rod in a **Rust Backend** (e.g., Actix/Axum).
-
-| Library | Time (ns) |
-| :--- | :--- |
-| **Rod (Rust)** | **217 ns** |
-| Serde (Deserialize) | ~400 ns |
-
-**Verdict:** In its native environment, Rod is blazingly fast—comparable to raw handwritten Rust checks.
-
-## Summary
-
-1.  **Rod is fastest in Rust.** It is a top-tier choice for Rust backends.
-2.  **Rod is slower in JS/Python** for simple tasks due to the "Bridge Tax."
-3.  **Rod is "fast enough"** for most API payloads (sub-millisecond), but should not be used in tight loops (millions of ops/sec) in JS/Python unless using `checkBatch`.
-
-The value of Rod is **Correctness**: knowing that your Python Script, Node API, and Rust Worker all enforce the *exact* same rules, bug-for-bug.
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    // Criterion benchmark
+    let schema = rod_obj! { 
+        name: string(), 
+        age: number() 
+    };
+    let data = json!({ "name": "John", "age": 30 });
+    let input = wrap(&data);
+    
+    b.iter(|| schema.validate(&input));
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    // Mitata benchmark
+    const schema = rod.object({ 
+        name: rod.string(), 
+        age: rod.number() 
+    });
+    const data = { name: "John", age: 30 };
+    
+    bench('rod', () => schema.parse(data));
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    # Timeit benchmark
+    schema = rod.object({
+        "name": rod.string(),
+        "age": rod.number()
+    })
+    data = {"name": "John", "age": 30}
+    
+    timeit.timeit(lambda: schema.parse(data))
+    ```
+  </Tab>
+</Tabs>

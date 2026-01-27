@@ -1,40 +1,50 @@
 ---
 title: Tuples
-description: Fixed-length arrays with distinct types.
+description: Fixed-length arrays with distinct positional types.
 ---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 # Tuples
 
-A Tuple is an array with a fixed number of elements, where each position has a specific schema.
+Tuples validate arrays with a fixed number of elements where each position has a specific schema.
 
-```typescript
-const Coordinate = rod.tuple([
-  rod.number(), // Latitude
-  rod.number()  // Longitude
-]);
-```
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    use rod_rs::tuple;
+    
+    // [String, Number]
+    let schema = tuple(vec![
+        Box::new(string()),
+        Box::new(number())
+    ]);
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    import { rod } from 'rod-js';
+    
+    const schema = rod.tuple([
+        rod.string(),
+        rod.number()
+    ]);
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    import rod
+    
+    schema = rod.tuple(
+        rod.string(),
+        rod.number()
+    )
+    ```
+  </Tab>
+</Tabs>
 
 ## Validation Rules
 
-- Input must be an array.
-- Length must match exactly.
-- Each item at index `i` is validated against schema `i`.
-
-## Example
-
-```typescript
-const UserTuple = rod.tuple([
-  rod.string(), // Name
-  rod.number(), // Age
-  rod.boolean() // IsAdmin
-]);
-
-// ✅ Valid
-UserTuple.parse(["John", 30, true]);
-
-// ❌ Invalid (Wrong types)
-UserTuple.parse([30, "John", true]);
-
-// ❌ Invalid (Too short)
-UserTuple.parse(["John", 30]);
-```
+- The input must be an array.
+- The array length must match the number of defined schemas exactly.
+- Each element is validated against the schema at its corresponding index.

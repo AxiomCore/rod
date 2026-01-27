@@ -1,6 +1,6 @@
-use rod::io::json::wrap;
-use rod::types::object::object;
-use rod::{
+use rod_rs::io::json::wrap;
+use rod_rs::types::object::object;
+use rod_rs::{
     RodValidator, RodValue, any, enum_type, intersection, lazy, literal, never, number, refine,
     rod_obj, string, transform, union,
 };
@@ -86,7 +86,7 @@ fn test_lazy() {
 
 #[test]
 fn test_discriminated_union() {
-    use rod::{discriminated_union, literal, number, rod_obj};
+    use rod_rs::{discriminated_union, literal, number, rod_obj};
 
     let circle = rod_obj! { kind: literal("circle"), radius: number() };
     let square = rod_obj! { kind: literal("square"), side: number() };

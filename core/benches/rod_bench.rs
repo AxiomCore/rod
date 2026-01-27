@@ -1,7 +1,7 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use rod::core::validator::RodValidator;
-use rod::io::json::wrap;
-use rod::types::{array::array, number::number, object::object, string::string};
+use rod_rs::core::validator::RodValidator;
+use rod_rs::io::json::wrap;
+use rod_rs::types::{array::array, number::number, object::object, string::string};
 use serde_json::json;
 use std::collections::HashMap;
 

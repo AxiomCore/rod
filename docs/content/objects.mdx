@@ -1,97 +1,67 @@
 ---
 title: Objects
-description: Validating complex nested data structures.
+description: Validating complex nested structures.
 ---
 
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 # Objects
 
-Objects are the backbone of most schemas. Rod allows you to define the "shape" of an object and recursively validate every field.
+Objects define the shape of your data. Rod supports strict mode, stripping unknown keys, and deep nesting.
 
-```typescript
-const User = rod.object({
-  name: rod.string(),
-  age: rod.number()
-});
-```
-
-## Unknown Keys (Strict vs Strip)
-
-By default, Rod **strips** unknown keys. If you pass extra fields that are not in the schema, they are silently removed from the output.
-
-- `.strip()`: (Default) Remove extra keys.
-- `.strict()`: Throw an error if extra keys are found.
-- `.passthrough()`: Keep extra keys as-is (useful for wrappers).
-
-```typescript
-const schema = rod.object({ name: rod.string() });
-
-// Input
-const input = { name: "Rod", role: "admin" };
-
-// Default (Strip) -> Output: { name: "Rod" }
-schema.parse(input); 
-
-// Strict -> Throws Error: "Unrecognized key: 'role'"
-schema.strict().parse(input);
-```
-
-## Parsing Modes (JavaScript Only)
-
-In JavaScript/TypeScript, objects are expensive to serialize. Rod offers two modes to handle this performance trade-off.
-
-### 1. Lazy Mode (`mode: 'lazy'`)
-**Best for:** Large, deep objects where you might not access every field, or simple validation.
-
-Rod uses `Reflect.get()` to read properties from the JS object **on-demand**. It does not serialize the object.
-
-```typescript
-// Fast startup, slightly slower per-field access
-schema.parse(largeData, { mode: 'lazy' });
-```
-
-### 2. Eager Mode (`mode: 'eager'`)
-**Best for:** Massive arrays of primitives or when the schema touches every single field anyway.
-
-Rod serializes the entire JS object to JSON, sends it to Rust in one go, and validates it natively. This incurs a high startup cost (serialization) but validation inside Rust is blazingly fast.
-
-```typescript
-// High startup cost, ultra-fast validation
-schema.parse(hugeData, { mode: 'eager' });
-```
-
-## Nested Objects
-
-You can nest `rod.object()` definitions arbitrarily deep. Rod tracks recursion depth to prevent stack overflows (default limit: 256).
-
-<Tabs items={['TypeScript', 'Python']}>
-<Tab value="TypeScript">
-```typescript
-const Address = rod.object({
-  street: rod.string(),
-  city: rod.string(),
-  zip: rod.string().length(5)
-});
-
-const User = rod.object({
-  username: rod.string(),
-  address: Address // Nesting
-});
-```
-</Tab>
-<Tab value="Python">
-```python
-address = rod.object({
-    "street": rod.string(),
-    "city": rod.string(),
-    "zip": rod.string().length(5)
-})
-
-user = rod.object({
-    "username": rod.string(),
-    "address": address
-})
-```
-</Tab>
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    let schema = rod_obj! {
+        name: string(),
+        age: number().int()
+    };
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    const schema = rod.object({
+        name: rod.string(),
+        age: rod.number().int()
+    });
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    schema = rod.object({
+        "name": rod.string(),
+        "age": rod.number().int()
+    })
+    ```
+  </Tab>
 </Tabs>
+
+## Unknown Keys
+
+- `.strip()`: (Default) Silently removes keys not defined in the schema.
+- `.strict()`: Fails validation if any unknown keys are present.
+- `.passthrough()`: Retains unknown keys in the output.
+
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    rod_obj! { ... }.strict()
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    rod.object({ ... }).strict()
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    rod.object({ ... }).strict()
+    ```
+  </Tab>
+</Tabs>
+
+## JS Parsing Modes
+
+In TypeScript, you can specify how Rod reads your JS objects:
+- **`mode: 'lazy'` (Default):** Reads fields only when needed. Best for large objects.
+- **`mode: 'eager'`:** Serializes the whole object to Rust first. Best for massive arrays of simple objects.

@@ -7,60 +7,42 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 # Arrays
 
-Use `rod.array(schema)` to validate a list of items.
+Arrays validate that every item in a list matches a specific schema.
+
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    use rod_rs::array;
+    
+    let schema = array(string()).min(1).max(10);
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    import { rod } from 'rod-js';
+    
+    const schema = rod.array(rod.string()).min(1).max(10);
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    import rod
+    
+    schema = rod.array(rod.string()).min(1).max(10)
+    ```
+  </Tab>
+</Tabs>
+
+## Batch Optimization (TypeScript)
+
+When validating thousands of items in JavaScript, crossing the WASM bridge for every item is expensive. Rod provides a batch API to validate a whole array in one trip.
 
 ```typescript
-// Array of strings
-const tags = rod.array(rod.string());
-```
+const schema = rod.string().email();
+const largeArray = ["a@b.com", "invalid", "c@d.com"];
 
-## Length Constraints
+// Returns a bitmask: Uint8Array([1, 0, 1])
+const mask = schema.checkBatch(largeArray);
 
-- `.min(count: number)`: Minimum items.
-- `.max(count: number)`: Maximum items.
-- `.nonempty()`: Alias for `.min(1)`.
-
-```typescript
-rod.array(rod.number()).min(5).max(100);
-```
-
-## Batch Optimization (High Performance)
-
-Validating large arrays (e.g., 100,000 items) one-by-one in a loop is slow due to the "Bridge Tax" (JS ↔ Rust communication overhead).
-
-Rod provides a specialized **Batch API** for arrays in JavaScript.
-
-### `checkBatch(items: any[]): Uint8Array`
-
-Instead of returning an array of objects or errors, this returns a **Bitmask** (Uint8Array).
-- `1` = Valid
-- `0` = Invalid
-
-This allows you to filter massive datasets incredibly fast because it bypasses the overhead of creating JS objects for the results.
-
-```typescript
-const NumberSchema = rod.number().min(0).max(100);
-const hugeArray = [10, 50, -5, 200, 90, ...]; // 100k items
-
-// Returns Uint8Array [1, 1, 0, 0, 1, ...]
-const mask = NumberSchema.checkBatch(hugeArray);
-
-// Filter in JS using the mask
-const validItems = hugeArray.filter((_, i) => mask[i] === 1);
-```
-
-<Callout type="info">
-**Benchmark:** In our tests, `checkBatch` is ~3x faster than running `.parse()` in a loop for complex logic, approaching the speed of native Zod.
-</Callout>
-
-### `parseBatch(items: any[]): any[]`
-
-Similar to `checkBatch`, but returns an array of the actual parsed data (or `null` for failures). This is slower than `checkBatch` but useful if your schema includes transformations (like `.trim()`).
-
-```typescript
-const inputs = ["  valid  ", "invalid-email", "  ok  "];
-const EmailSchema = rod.string().email().trim();
-
-// Returns ["valid", null, "ok"]
-const results = EmailSchema.parseBatch(inputs);
-```
+// Filter the original array using the mask
+const validItems = largeArray.filter((_, i) => mask[i] === 1);

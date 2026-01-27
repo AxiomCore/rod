@@ -7,66 +7,42 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 # Lazy Evaluation
 
-Sometimes a schema needs to reference itself (recursion) or reference a schema that hasn't been defined yet (hoisting). Rod provides `rod.lazy()` for these scenarios.
+Lazy evaluation allows you to define recursive schemas where a schema references itself.
 
-## Recursive Schemas
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    use rod_rs::{lazy, rod_obj, string, array, RodValidator};
 
-A classic example is a JSON-like tree structure where a `Category` can contain sub-categories.
+    // Recursive Tree structure
+    let schema = lazy(|| Box::new(rod_obj! {
+        name: string(),
+        children: array(lazy(|| Box::new(schema.clone())))
+    }));
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    import { rod } from 'rod-js';
 
-<Tabs items={['TypeScript', 'Python']}>
-<Tab value="TypeScript">
-```typescript
-interface Category {
-  name: string;
-  subcategories: Category[];
-}
+    const Category = rod.lazy(() => rod.object({
+        name: rod.string(),
+        subcategories: rod.array(Category)
+    }));
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    import rod
 
-const CategorySchema: rod.RodType = rod.object({
-  name: rod.string(),
-  // Use lazy() to defer execution until runtime
-  subcategories: rod.array(rod.lazy(() => CategorySchema))
-});
-
-const data = {
-  name: "Electronics",
-  subcategories: [
-    { name: "Laptops", subcategories: [] },
-    { name: "Phones", subcategories: [] }
-  ]
-};
-
-CategorySchema.parse(data);
-```
-</Tab>
-<Tab value="Python">
-```python
-# In Python, we can't easily reference a variable before assignment.
-# But Rod supports lazy execution if you wrap it in a lambda.
-
-# Note: Python type hinting for recursive structures is complex,
-# but Rod handles the runtime validation fine.
-
-category_schema = rod.lazy(lambda: rod.object({
-    "name": rod.string(),
-    "subcategories": rod.array(category_schema)
-}))
-```
-</Tab>
+    category = rod.lazy(lambda: rod.object({
+        "name": rod.string(),
+        "subcategories": rod.array(category)
+    }))
+    ```
+  </Tab>
 </Tabs>
 
-## Cyclic Data
-
-Rod's `ValidationContext` tracks recursion depth. By default, it allows a depth of **256**. If your data structure is deeper than that (or cyclic), Rod will throw a `Recursion limit exceeded` error to prevent a stack overflow crash.
-
-```typescript
-const node = { val: 1 };
-node.next = node; // Cycle
-
-const NodeSchema = rod.object({
-  val: rod.number(),
-  next: rod.lazy(() => NodeSchema).optional()
-});
-
-// Throws "Recursion limit exceeded" after 256 levels
-NodeSchema.parse(node); 
-```
+<Callout type="warn">
+Rod enforces a default recursion limit of **256** to prevent stack overflows. Cyclic data structures that exceed this depth will fail validation.
+</Callout>

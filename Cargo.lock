@@ -644,7 +644,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
-name = "rod"
+name = "rod-pyo3"
+version = "0.1.0"
+dependencies = [
+ "pyo3",
+ "pythonize",
+ "rod-rs",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "rod-rs"
 version = "0.1.0"
 dependencies = [
  "chrono",
@@ -662,23 +673,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "rod-pyo3"
-version = "0.1.0"
-dependencies = [
- "pyo3",
- "pythonize",
- "rod",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "rod-wasm"
 version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "js-sys",
- "rod",
+ "rod-rs",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",

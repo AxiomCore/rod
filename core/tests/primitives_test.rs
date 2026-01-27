@@ -1,6 +1,6 @@
 use chrono::{TimeZone, Utc};
-use rod::io::json::wrap;
-use rod::{RodValidator, coerce, date, string};
+use rod_rs::io::json::wrap;
+use rod_rs::{RodValidator, coerce, date, string};
 use serde_json::json;
 
 #[test]

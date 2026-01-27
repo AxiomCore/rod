@@ -8,7 +8,7 @@ name = "rod_pyo3"
 crate-type = ["cdylib"]
 
 [dependencies]
-rod = { path = "../../core", features = ["non-thread-safe"] }
+rod-rs = { path = "../../core", features = ["non-thread-safe"] }
 pyo3 = { version = "0.22.2", features = ["extension-module"] }
 # Official bridge for Serde <-> PyO3
 pythonize = "0.22.0"

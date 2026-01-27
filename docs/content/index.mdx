@@ -1,48 +1,63 @@
 ---
-title: Introduction
+title: Rod v0.1.0
 description: The Write-Once, Validate-Anywhere Schema Library.
 ---
 
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
 # Introduction
 
-**Rod** is a high-performance, cross-platform schema validation library powered by Rust. It allows you to define validation logic once and run it consistently across your entire stack: **Rust** backends, **JavaScript/TypeScript** frontends (via WASM), and **Python** data pipelines (via PyO3).
+**Rod** is a high-performance, cross-platform schema validation library powered by Rust. It allows you to define validation logic once and run it consistently across your entire stack.
 
-## The Problem: Schema Drift
+## One Schema, Three Runtimes
 
-In modern full-stack development, validation logic is often duplicated:
-1.  **Backend (Rust/Go):** Enforces data integrity before saving to DB.
-2.  **Frontend (TypeScript):** Provides immediate feedback to users (e.g., Zod).
-3.  **Data/ML (Python):** Cleans datasets (e.g., Pydantic).
+In modern full-stack development, validation logic is often duplicated across languages. Rod moves that logic into a shared **Rust Core**, providing native speed and byte-level consistency.
 
-Keeping these three layers in sync is manual, error-prone, and leads to "Schema Drift"—where the frontend thinks an email is valid, but the backend rejects it.
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    // Direct native execution in your Axum/Actix backend
+    let schema = rod_obj! {
+        email: string().email(),
+        age: number().min(18.0)
+    };
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    // High-performance WASM in the Browser or Node.js
+    const schema = rod.object({
+        email: rod.string().email(),
+        age: rod.number().min(18)
+    });
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    // Native PyO3 extension for data pipelines/scripts
+    schema = rod.object({
+        "email": rod.string().email(),
+        "age": rod.number().min(18)
+    })
+    ```
+  </Tab>
+</Tabs>
 
-## The Rod Solution
+## Why Rod?
 
-Rod moves the validation logic into a shared **Rust Core**. This core is compiled into native binaries, WebAssembly, and Python extensions.
+- **Eliminate Schema Drift:** Guarantee that your Frontend, Backend, and Data tools use the exact same validation rules.
+- **Zero-Copy Core:** Validates directly against host memory layouts (V8 Heap, Python Dicts, or Rust Structs).
+- **Zod-Inspired API:** Familiar fluent builder pattern for all developers.
+- **Batch Optimization:** Specialized APIs for massive datasets (100k+ items) that bypass language-boundary overhead.
 
-- **Consistent:** A `uuid()` check in the browser uses the exact same byte-level logic as the backend.
-- **Portable:** Share schemas via YAML specifications or builder patterns.
-- **Zero-Copy Architecture:** Rod attempts to validate data in-place without serializing it to an intermediate format first.
+## Performance Profile
 
-## Performance Reality Check
-
-Rod prioritizes **consistency** and **portability**. While the Rust core is incredibly fast (nanosecond-scale), calling Rod from JavaScript or Python involves a "Bridge Tax"—the overhead of crossing the Foreign Function Interface (FFI).
-
-| Environment | Best Use Case | Performance Profile |
+| Environment | Best Use Case | Performance |
 | :--- | :--- | :--- |
-| **Native Rust** | High-performance backends | **🚀 Ultra Fast** (Comparable to handwritten checks) |
-| **JavaScript** | Consistency-critical apps, Batch processing | **⚠️ Moderate** (Slower than Zod for small objects due to FFI overhead) |
-| **Python** | Shared logic with backend | **⚠️ Moderate** (Slower than Pydantic for simple iteration) |
+| **Native Rust** | High-performance backends | **🚀 Ultra Fast** |
+| **JavaScript** | Consistent Web Apps | **⚠️ Moderate** (FFI Overhead) |
+| **Python** | Cross-platform scripts | **⚠️ Moderate** (FFI Overhead) |
 
-<Callout type="warn" title="When NOT to use Rod">
-If your <strong>only</strong> goal is raw speed for validating small, simple objects in the browser (e.g., a simple login form), libraries like <strong>Zod</strong> will be faster because they run directly inside the JavaScript V8 engine without the overhead of WASM communication.
-
-Choose Rod when you need <strong>guaranteed consistency</strong> across languages or need to validate <strong>massive datasets</strong> efficiently.
+<Callout type="info">
+Rod prioritizes **correctness** and **portability**. While the Rust core is nanosecond-fast, calling it from JS or Python involves a "Bridge Tax." For high-frequency small object validation in pure JS, Zod remains a great choice. Choose Rod when consistency is your primary requirement.
 </Callout>
-
-## Key Features
-
-- **Zod-like API:** Fluent builder pattern (`rod.string().min(5)`) familiar to TypeScript developers.
-- **Cross-Platform:** Works in Node.js, Browsers, Rust, and Python.
-- **Rich Primitives:** Built-in support for UUIDs, CUIDs, IP addresses, URLs, and Datetimes.
-- **Batch Optimization:** Specialized methods to validate arrays of primitives via bitmasks, bypassing per-item bridge costs.

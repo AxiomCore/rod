@@ -3,61 +3,66 @@ title: Architecture
 description: Understanding the Zero-Copy Design and Bridge Tax.
 ---
 
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
 # Architecture
 
-Rod is built on a philosophy of **abstracted access**. Unlike many FFI (Foreign Function Interface) libraries that require you to serialize data into JSON strings to pass them between languages, Rod attempts to read the memory of the host language directly.
+Rod is built on a philosophy of **abstracted access**. Instead of forcing you to serialize data into JSON strings to pass them between languages, Rod reads the host language's memory directly through an abstraction layer.
 
 ## The `RodInput` Trait
 
-At the heart of Rod is the `RodInput` trait. This is the interface that allows the core Rust logic to be agnostic of where the data lives.
+The core validation engine uses the `RodInput` trait to interact with data. This trait allows the same Rust code to validate different memory layouts.
 
-```rust
-pub trait RodInput<'a> {
-    fn get_type(&self) -> DataType;
-    fn as_str(&self) -> Option<Cow<'a, str>>;
-    fn with_key(&self, key: &str, f: ...) -> ...;
-    fn with_index(&self, index: usize, f: ...) -> ...;
-}
-```
+<Tabs items={['Rust', 'TypeScript (WASM)', 'Python (PyO3)']}>
+  <Tab value="Rust">
+    **Implementation:** `JsonInput`
+    
+    Wraps a `serde_json::Value`. Validation happens directly on the JSON tree in Rust memory.
+    
+    ```rust
+    // Logic inside core/src/io/json.rs
+    impl<'a> RodInput<'a> for JsonInput<'a> {
+        fn get_type(&self) -> DataType { ... }
+        fn as_str(&self) -> Option<Cow<'a, str>> { ... }
+    }
+    ```
+  </Tab>
+  <Tab value="TypeScript (WASM)">
+    **Implementation:** `JsInput`
+    
+    Wraps a `JsValue`. Rod uses `Reflect.get()` to read properties from the JavaScript heap on-demand.
+    
+    ```rust
+    // Logic inside bindings/rod-wasm/src/lazy.rs
+    impl<'a> RodInput<'a> for JsInput {
+        fn with_key(&self, key: &str, ...) {
+            let val = js_sys::Reflect::get(&self.value, &key_js);
+            // ...
+        }
+    }
+    ```
+  </Tab>
+  <Tab value="Python (PyO3)">
+    **Implementation:** `PyInput`
+    
+    Wraps a `PyObject`. Rod uses the Python C-API to read dictionaries and lists directly.
+    
+    ```rust
+    // Logic inside bindings/rod-pyo3/src/py_input.rs
+    impl<'a> RodInput<'a> for PyInput<'a> {
+        fn keys(&self) -> Option<Box<dyn Iterator<Item = Cow<'a, str>>>> {
+            let dict = self.0.downcast::<PyDict>().ok()?;
+            let keys = dict.keys();
+            // ...
+        }
+    }
+    ```
+  </Tab>
+</Tabs>
 
-This trait has three major implementations:
-1.  **`JsonInput` (Rust):** Wraps a `serde_json::Value`. Used for native Rust validation.
-2.  **`JsInput` (WASM):** Wraps a `JsValue`. Uses `Reflect.get()` to read properties from the JavaScript heap without cloning the object.
-3.  **`PyInput` (Python):** Wraps a `PyObject`. Uses the Python C-API to read dictionaries and lists directly.
+## The "Bridge Tax"
 
-## The Cost of Abstraction (Virtual Dispatch)
+When Rod runs in JavaScript or Python, it must "cross the bridge" to communicate with the Rust core. This round-trip has a fixed cost of approximately **1,500ns – 4,000ns**.
 
-While this architecture allows Rod to support Rust, Node, Browser, and Python from a single codebase, it introduces **Virtual Dispatch** overhead.
-
-1.  **Zod (JS):** Runs on V8. V8 uses "Hidden Classes" to compile property access (`obj.name`) into a direct memory offset assembly instruction. It is incredibly fast because it is "JIT optimized" for exactly the shape of object you are validating.
-2.  **Rod (WASM):** Must call a function -> cross the WASM bridge -> invoke `Reflect.get()` -> convert the result -> return to Rust.
-
-This creates what we call the **"Bridge Tax"**.
-
-## The Bridge Tax
-
-Calling a function in WebAssembly from JavaScript (or Rust from Python) is not free. It takes roughly **1500ns - 4000ns** just to make the round trip.
-
-- If you are validating a **Simple Object** (e.g., `{ name: "Rod" }`), the validation itself might only take 200ns.
-- If the Bridge Tax is 2000ns, Rod will be **10x slower** than a native library like Zod, because 90% of the time is spent "crossing the border."
-
-However, if you are validating a **Complex Object** (e.g., thousands of items, heavy Regex, UUIDs), the validation might take 50,000ns.
-- In this case, the 2000ns Bridge Tax is negligible (4%), and Rod's faster Rust logic can win.
-
-## Memory Layout (Visualized)
-
-### Standard FFI (The "Clone" Way)
-*Most libraries do this.*
-1.  **JS:** `JSON.stringify(obj)` (Expensive Copy)
-2.  **Bridge:** Copy string to WASM memory.
-3.  **Rust:** `serde_json::from_str(str)` (Expensive Parse)
-4.  **Rust:** Validate.
-
-### Rod (The "Zero-Copy" Way)
-*Lazy Mode*
-1.  **JS:** Pass reference (pointer) to `obj` to WASM.
-2.  **Rust:** Needs field "age". Calls `Reflect.get(obj, "age")`.
-3.  **JS:** V8 looks up "age", returns value.
-4.  **Rust:** Checks value.
-
-This avoids the massive "Clone" and "Parse" steps, making Rod startup instant. However, the "chatter" between Rust and JS in step 2 & 3 accumulates if you access thousands of fields one by one.
+- For **small objects**, this tax dominates the execution time, making Rod slower than native JS/Python libraries.
+- For **massive datasets**, the bridge tax is paid only once (via Batch APIs), allowing Rod's high-performance Rust core to win.

@@ -1,5 +1,5 @@
-use rod::core::input::{DataType, RodInput};
-use rod::core::value::RodValue;
+use rod_rs::core::input::{DataType, RodInput};
+use rod_rs::core::value::RodValue;
 use std::borrow::Cow;
 use wasm_bindgen::prelude::*;
 

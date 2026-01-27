@@ -1,59 +1,67 @@
 ---
 title: Numbers
-description: Integer and floating-point validation.
+description: Integer and float validation.
 ---
 
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 # Numbers
 
-Rod handles numbers consistently across languages, despite the underlying differences (e.g., Python `int` vs JavaScript `number`).
+Rod treats all numbers as double-precision floats (`f64`) internally but provides specific integer constraints.
 
-```typescript
-const schema = rod.number().int().min(0);
-```
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    number().int().min(0.0).max(100.0)
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    rod.number().int().min(0).max(100)
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    rod.number().int().min(0).max(100)
+    ```
+  </Tab>
+</Tabs>
 
-## Checks
+## Constraints
 
-- `.min(value: number)`: Minimum value (inclusive).
-- `.max(value: number)`: Maximum value (inclusive).
-- `.int()`: Ensures the number is an integer. 
-    - In **JavaScript**, checks `Number.isInteger()`.
-    - In **Rust/Python**, checks if the value has no fractional part.
+- `.min(n)`: Minimum value (inclusive).
+- `.max(n)`: Maximum value (inclusive).
+- `.int()`: Rejects any value with a fractional part.
 
-## Handling Floats
+## Type Strictness
 
-Rod uses `f64` (double-precision floating point) internally in Rust. 
+Rod does not perform implicit coercion by default. Passing a string `"123"` to a number validator will fail unless you use the `coerce` module.
 
-```typescript
-// Accepts 10, 10.5, 20.0
-rod.number().min(10).max(20);
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    // Fails for "123"
+    number().validate(&input) 
 
-// Rejects 10.5
-rod.number().int(); 
-```
+    // Succeeds for "123" -> returns 123.0
+    rod_rs::coerce::number().validate(&input)
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    // Fails for "123"
+    rod.number().parse("123")
 
-## Coercion (Coming Soon)
+    // Succeeds for "123"
+    rod.coerce.number().parse("123")
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    # Fails for "123"
+    rod.number().parse("123")
 
-Currently, Rod validates types strictly. It does **not** automatically convert string `"42"` to number `42` unless you explicitly use a coercion helper (planned for v0.2).
-
-If you pass `"123"` to `rod.number()`, it will fail with an `InvalidType` error.
-
-<Tabs items={['TypeScript', 'Python']}>
-<Tab value="TypeScript">
-```typescript
-const PriceSchema = rod.number().min(0.01).max(999.99);
-
-PriceSchema.parse(10.50); // ✅ OK
-PriceSchema.parse("10.50"); // ❌ Error: Expected number
-```
-</Tab>
-<Tab value="Python">
-```python
-price_schema = rod.number().min(0.01).max(999.99)
-
-price_schema.parse(10.50) # ✅ OK
-price_schema.parse("10.50") # ❌ Error
-```
-</Tab>
+    # Succeeds for "123" (Coming Soon in Python)
+    ```
+  </Tab>
 </Tabs>

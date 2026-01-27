@@ -1,59 +1,73 @@
 ---
 title: Transformations
-description: Refining validation and transforming outputs.
+description: Custom logic and data mapping.
 ---
 
-# Transformations & Refinements
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
-Rod allows you to not just validate types, but also enforce custom rules (`refine`) and modify data (`transform`).
+# Transformations
 
-<Callout type="warn">
-**Performance Note:** Using `refine` or `transform` forces Rod to switch to a slower execution path because it cannot just check memory layouts; it must execute your custom code. In JavaScript/Python, this means crossing the bridge multiple times.
-</Callout>
+Transformations allow you to add custom validation logic (`refine`) or modify the data (`transform`) after it has passed initial type checks.
 
 ## Refine (Custom Validation)
 
-Use `.refine` (or `rod.refine` in Python) to add custom logic that cannot be expressed with standard validators.
+Add custom constraints that aren't covered by built-in validators.
 
-```typescript
-const Password = rod.string().refine((val) => {
-    // Check if password has a special char
-    return val.includes("!");
-}, "Password must contain '!'");
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    use rod_rs::refine;
+    
+    let schema = refine(string(), |val| {
+        if val.as_str().unwrap().contains("!") {
+            Ok(())
+        } else {
+            Err("Must contain !".to_string())
+        }
+    });
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    import { rod } from 'rod-js';
+    
+    const schema = rod.string().refine(
+        (val) => val.includes("!"),
+        "Must contain !"
+    );
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    # Refinements are coming soon to Python bindings.
+    ```
+  </Tab>
+</Tabs>
 
-Password.parse("secure123"); // ❌ Error
-Password.parse("secure!123"); // ✅ OK
-```
+## Transform (Data Mapping)
 
-## Transform (Modifying Data)
+Modify the output value of the validation.
 
-Use `.transform` to map the data to a new format *after* validation succeeds.
-
-```typescript
-const ToString = rod.number().transform((val) => {
-    return `Value is ${val}`;
-});
-
-const result = ToString.parse(42); 
-// result === "Value is 42"
-```
-
-## Coercion (Pre-Process)
-
-A common pattern is "Coercion" (e.g., turning query string `"123"` into number `123`). Rod provides specialized `rod.coerce` helpers for this.
-
-```typescript
-import { rod } from 'rod-js';
-
-// Accepts string "123" -> returns number 123
-const CoercedNumber = rod.coerce.number(); 
-
-CoercedNumber.parse("100"); // 100
-CoercedNumber.parse(100);   // 100
-CoercedNumber.parse("abc"); // ❌ Error
-```
-
-Supported coercions:
-- `rod.coerce.string()`: Converts numbers/booleans to string.
-- `rod.coerce.number()`: Parses strings to float/int.
-- `rod.coerce.boolean()`: Converts `"true"`/`"false"` strings to boolean.
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```rust
+    use rod_rs::{transform, RodValue};
+    
+    let schema = transform(number(), |val| {
+        RodValue::Number(val.as_f64().unwrap() * 2.0)
+    });
+    ```
+  </Tab>
+  <Tab value="TypeScript">
+    ```typescript
+    import { rod } from 'rod-js';
+    
+    const schema = rod.number().transform((val) => val * 2);
+    ```
+  </Tab>
+  <Tab value="Python">
+    ```python
+    # Transformations are coming soon to Python bindings.
+    ```
+  </Tab>
+</Tabs>

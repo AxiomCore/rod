@@ -1,65 +1,39 @@
 ---
 title: Installation
-description: Getting Rod set up in your project.
+description: Getting Rod set up in your environment.
 ---
 
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 # Installation
 
-Rod consists of a core Rust library and bindings for JavaScript and Python. Choose the installation method for your environment.
+Rod is distributed as a native library for Rust and optimized bindings for JavaScript and Python.
 
-<Tabs items={['Rust', 'JavaScript / TypeScript', 'Python']}>
-
-<Tab value="Rust">
-
-Add `rod` to your `Cargo.toml`.
-
-```bash
-cargo add rod
-```
-
-Or manually add it to your dependencies:
-
-```toml
-[dependencies]
-rod = "0.1.0"
-```
-
-</Tab>
-
-<Tab value="JavaScript / TypeScript">
-
-Rod is available as an NPM package that includes the WebAssembly binaries. It works in both Node.js and the Browser.
-
-```bash
-npm install rod-js
-# or
-pnpm add rod-js
-# or
-yarn add rod-js
-```
-
-</Tab>
-
-<Tab value="Python">
-
-Rod provides a native Python extension compiled via PyO3.
-
-```bash
-pip install rod
-```
-
-*Note: Requires Python 3.8+*
-
-</Tab>
-
+<Tabs items={['Rust', 'TypeScript', 'Python']}>
+  <Tab value="Rust">
+    ```bash
+    cargo add rod-rs
+    ```
+    *Requires Rust 1.70+*
+  </Tab>
+  <Tab value="TypeScript">
+    ```bash
+    npm install rod-js
+    # or
+    pnpm add rod-js
+    ```
+    *Supports Node.js 18+ and all modern browsers via WASM.*
+  </Tab>
+  <Tab value="Python">
+    ```bash
+    pip install rod-py
+    ```
+    *Requires Python 3.8+*
+  </Tab>
 </Tabs>
 
-## Prerequisites
+## Platform Support
 
-- **Rust:** Requires generic associated types (GATs), so a relatively modern Rust compiler (1.65+) is recommended.
-- **JavaScript:** The WASM bindings require an environment that supports `WebAssembly`.
-  - Node.js 18+
-  - Modern Browsers (Chrome, Firefox, Safari, Edge)
-- **Python:** Python 3.8 or newer.
+- **Rust:** Native support for all Tier 1 platforms.
+- **JS/WASM:** Bundled as an ES Module. Requires an environment supporting `WebAssembly`.
+- **Python:** Distributed as pre-compiled wheels for Windows, macOS (Intel/M-series), and Linux.
