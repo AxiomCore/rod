@@ -80,6 +80,13 @@ export abstract class RodType {
     }
 }
 
+export class RodDynamic extends RodType {
+    constructor(spec: object, bridge: Bridge) {
+        super((spec as any).type || "unknown", bridge);
+        this.def = spec; // The spec IS the definition
+    }
+}
+
 // --- Primitives ---
 
 export class RodString extends RodType {

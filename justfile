@@ -86,6 +86,7 @@ publish-python: setup-python
 
 # Publish JS
 publish-js: build-wasm build-js
+    @cp README.md languages/js/README.md
     @echo "📦 Publishing rod-js to NPM..."
     cd languages/js && npm publish --access public
 

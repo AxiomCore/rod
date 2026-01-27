@@ -19,6 +19,7 @@
         "enums",
         "lazy-eval",
         "transformations",
+        "dynamic-schemas",
         "---Deep Dive---",
         "architecture",
         "benchmarks",
