@@ -77,15 +77,17 @@ publish-rust:
     @echo "📦 Publishing rod-rs to crates.io..."
     cd core && cargo publish
 
-# Publish the JS/TS package to NPM (as rod-js)
+# Publish Python
+publish-python: setup-python
+    @cp README.md languages/python/README.md
+    @cp README.md bindings/rod-pyo3/README.md
+    @echo "📦 Publishing rod-py to PyPI via Maturin..."
+    cd languages/python && ../../.venv/bin/maturin publish
+
+# Publish JS
 publish-js: build-wasm build-js
     @echo "📦 Publishing rod-js to NPM..."
     cd languages/js && npm publish --access public
-
-# Publish the Python extension to PyPI (as rod-py)
-publish-python: setup-python
-    @echo "📦 Publishing rod-py to PyPI via Maturin..."
-    cd languages/python && ../../.venv/bin/maturin publish
 
 # --- Documentation ---
 
