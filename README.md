@@ -1,6 +1,4 @@
-# Rod
-
-**The Write-Once, Validate-Anywhere Schema Library.**
+<h1 align="center"><strong>Rod: The Write-Once, Validate-Anywhere Schema Library.</strong></h1>
 
 <div align="center">
 <img src="static/banner.png" alt="Rod Banner" width="100%">
