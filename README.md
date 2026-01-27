@@ -3,6 +3,7 @@
 **The Write-Once, Validate-Anywhere Schema Library.**
 
 <div align="center">
+<img src="static/banner.png" alt="Rod Banner" width="100%">
 
 [![Crates.io](https://img.shields.io/crates/v/rod-rs.svg?style=flat-square)](https://crates.io/crates/rod-rs)
 [![NPM](https://img.shields.io/npm/v/rod-js.svg?style=flat-square)](https://www.npmjs.com/package/rod-js)
