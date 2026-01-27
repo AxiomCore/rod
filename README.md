@@ -30,7 +30,7 @@ Stop rewriting regexes in three different languages. Define it once in Rod, run 
 
 ### Rust
 ```bash
-cargo add rod
+cargo add rod-rs
 ```
 
 ### JavaScript / TypeScript
