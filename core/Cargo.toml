@@ -1,6 +1,6 @@
 [package]
 name = "rod-rs"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "A high-performance, cross-platform schema validation library powered by Rust."
 license = "MIT"
@@ -13,6 +13,8 @@ categories = ["data-structures", "wasm", "parsing"]
 
 [features]
 non-thread-safe = []
+macros = ["dep:rod-macros"] 
+default = ["macros"] 
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -26,6 +28,7 @@ wasm-bindgen = "0.2"
 serde-wasm-bindgen = "0.6"
 js-sys = "0.3"
 smallvec = "1.13"
+rod-macros = { path = "../macros", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

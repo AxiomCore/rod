@@ -20,6 +20,8 @@
         "lazy-eval",
         "transformations",
         "dynamic-schemas",
+        "---Macros---",
+        "rod-macros",
         "---Deep Dive---",
         "architecture",
         "benchmarks",
