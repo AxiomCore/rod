@@ -1,3 +1,4 @@
+use crate::RodSpec;
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
@@ -24,6 +25,10 @@ impl RodValidator for RodNullable {
             return Ok(RodValue::Null);
         }
         self.inner.validate_with_context(ctx, input)
+    }
+
+    fn to_spec(&self) -> RodSpec {
+        RodSpec::Nullable(Box::new(self.inner.to_spec()))
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

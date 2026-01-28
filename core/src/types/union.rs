@@ -1,3 +1,4 @@
+use crate::RodSpec;
 use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
@@ -33,6 +34,12 @@ impl RodValidator for RodUnion {
 
         ctx.add_issue(RodIssueCode::InvalidUnion, "Invalid input".into());
         Err(())
+    }
+
+    fn to_spec(&self) -> RodSpec {
+        RodSpec::Union {
+            options: self.options.iter().map(|o| o.to_spec()).collect(),
+        }
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

@@ -1,3 +1,4 @@
+use crate::RodSpec;
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
@@ -137,6 +138,14 @@ impl RodValidator for RodNumber {
             "Expected number".into(),
         );
         Err(())
+    }
+
+    fn to_spec(&self) -> RodSpec {
+        RodSpec::Number {
+            min: self.min,
+            max: self.max,
+            int: Some(self.is_int),
+        }
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

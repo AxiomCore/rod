@@ -1,3 +1,4 @@
+use crate::RodSpec;
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
@@ -24,6 +25,10 @@ impl RodValidator for RodBoolean {
             "Expected boolean".into(),
         );
         Err(())
+    }
+
+    fn to_spec(&self) -> RodSpec {
+        RodSpec::Boolean
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

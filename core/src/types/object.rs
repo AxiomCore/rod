@@ -1,3 +1,4 @@
+use crate::RodSpec;
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
@@ -159,6 +160,17 @@ impl RodValidator for RodObject {
             "Expected object".into(),
         );
         Err(())
+    }
+
+    fn to_spec(&self) -> RodSpec {
+        let mut properties = std::collections::HashMap::new();
+        for (name, validator) in &self.shape {
+            properties.insert(name.clone(), validator.to_spec());
+        }
+        RodSpec::Object {
+            properties,
+            strict: Some(self.unknown_keys == UnknownKeys::Strict),
+        }
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

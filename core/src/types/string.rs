@@ -1,3 +1,4 @@
+use crate::RodSpec;
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
@@ -321,6 +322,25 @@ impl RodValidator for RodString {
         }
 
         Ok(RodValue::String(val_cow))
+    }
+
+    fn to_spec(&self) -> RodSpec {
+        RodSpec::String {
+            min: self.min,
+            max: self.max,
+            length: self.length,
+            email: Some(self.is_email),
+            url: Some(self.is_url),
+            uuid: Some(self.is_uuid),
+            cuid: Some(self.is_cuid),
+            datetime: Some(self.is_datetime),
+            ip: Some(self.is_ip),
+            regex: self.regex.clone(),
+            starts_with: self.starts_with.clone(),
+            ends_with: self.ends_with.clone(),
+            includes: self.includes.clone(),
+            trim: self.should_trim,
+        }
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

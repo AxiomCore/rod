@@ -1,3 +1,4 @@
+use crate::RodSpec;
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
@@ -36,6 +37,12 @@ impl RodValidator for RodEnum {
             format!("Invalid enum value. Expected one of: {:?}", self.values),
         );
         Err(())
+    }
+
+    fn to_spec(&self) -> RodSpec {
+        RodSpec::Enum {
+            values: self.values.clone(),
+        }
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

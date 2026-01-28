@@ -1,0 +1,76 @@
+---
+title: JSON Schema Export
+description: Generating standard Draft 2020-12 documentation from Rod schemas.
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+# JSON Schema Export
+
+Rod allows you to export any schema to the industry-standard **JSON Schema (Draft 2020-12)** format. This enables your Rust code to serve as the "Single Source of Truth" for your entire tech stack, including database constraints and frontend documentation.
+
+## Usage
+
+You can generate a JSON Schema from either a Rust Struct (via macros) or a dynamic validator (via the builder API).
+
+<Tabs items={['Rust (Macro)', 'Rust (Builder)']}>
+  <Tab value="Rust (Macro)">
+    When using `#[derive(Rod)]`, a static `json_schema()` method is automatically generated.
+
+    ```rust
+    #[derive(Rod)]
+    struct User {
+        #[rod(min = 3)]
+        username: String,
+        email: Option<String>,
+    }
+
+    fn main() {
+        // Generates a serde_json::Value
+        let schema = User::json_schema();
+        println!("{}", serde_json::to_string_pretty(&schema).unwrap());
+    }
+    ```
+  </Tab>
+  <Tab value="Rust (Builder)">
+    Any validator created via the builder API implements the `json_schema()` method.
+
+    ```rust
+    use rod_rs::{string, RodValidator};
+
+    let schema = string().email().min(5);
+    let json = schema.json_schema();
+    ```
+  </Tab>
+</Tabs>
+
+## Logic Mapping
+
+Rod intelligently maps Rust types and constraints to their JSON Schema equivalents:
+
+| Rod Constraint | JSON Schema Output |
+| :--- | :--- |
+| `String` | `"type": "string"` |
+| `u32`, `i32`, etc. | `"type": "integer"` |
+| `Option<T>` | Omitted from `"required"` array and adds `"null"` to type array. |
+| `.email()` | `"format": "email"` |
+| `.uuid()` | `"format": "uuid"` |
+| `.cuid()` | `"pattern": "^[cC][^\\s-]{8,}$"` |
+| `tuple(A, B)` | `"prefixItems": [A, B]` (Draft 2020-12 standard) |
+
+## Use Case: Database Validation
+
+One of the most powerful uses for this feature is integrating with databases like PostgreSQL using the `pg_jsonschema` extension.
+
+```rust
+// 1. Generate schema in your migration or setup script
+let schema_json = UserProfile::json_schema().to_string();
+
+// 2. Apply to Postgres
+// ALTER TABLE users ADD CONSTRAINT valid_profile 
+// CHECK (validate_json_schema('<schema_json>', profile_data));
+```
+
+<Callout type="info">
+By using Rod to generate your DB constraints, you guarantee that your database will never accept data that your Rust backend considers invalid.
+</Callout>

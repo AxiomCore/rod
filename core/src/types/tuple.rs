@@ -1,3 +1,4 @@
+use crate::RodSpec;
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
@@ -64,6 +65,12 @@ impl RodValidator for RodTuple {
         }
 
         Ok(RodValue::Array(valid_items))
+    }
+
+    fn to_spec(&self) -> RodSpec {
+        RodSpec::Tuple {
+            items: self.items.iter().map(|i| i.to_spec()).collect(),
+        }
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

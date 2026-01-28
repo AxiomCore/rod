@@ -1,3 +1,4 @@
+use crate::RodSpec;
 use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
@@ -62,6 +63,10 @@ where
         Ok(val)
     }
 
+    fn to_spec(&self) -> RodSpec {
+        self.schema.to_spec()
+    }
+
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
         self.schema.deep_partial_boxed()
     }
@@ -121,6 +126,10 @@ where
         // Transform value.
         // We assume transformer returns a value valid for 'a or 'static.
         Ok((self.transformer)(val))
+    }
+
+    fn to_spec(&self) -> RodSpec {
+        self.schema.to_spec()
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

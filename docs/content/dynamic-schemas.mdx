@@ -7,51 +7,57 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 # Dynamic Schemas (RodSpec)
 
-While the builder API (`rod.string().min(5)`) is excellent for compile-time schemas, there are cases where you need to define validation rules at runtime—such as loading configuration from a database, a CMS, or a shared YAML file.
+While the builder API is excellent for compile-time schemas, there are cases where you need to define validation rules at runtime—such as loading configuration from a database or a shared YAML file.
 
-**RodSpec** is the serializable JSON/YAML format that defines a Rod schema. It allows you to transport validation logic across language boundaries as raw data.
+**RodSpec** is the serializable AST (Abstract Syntax Tree) that defines a Rod schema. It is the language-agnostic intermediate representation used by Rod to transport logic across language boundaries.
 
-## Why use RodSpec?
+## Bi-Directional Portability
 
-1.  **Portable Logic:** Define a validation rule in a JSON file and use it in your Rust microservice, your React frontend, and your Python data-science scripts without rewriting a single line of code.
-2.  **Database Driven:** Store user-defined form validations in your database as JSON and instantiate them instantly.
-3.  **Low Overhead:** Once the JSON/YAML is parsed by Rod, it is compiled into a native Rust validator. There is zero performance penalty compared to using the builder API.
+With the latest version of Rod, the relationship between a **Validator** (executable code) and a **Spec** (serializable data) is bi-directional.
 
-## Usage
+1. **Build:** `Spec -> Validator` (Run your JSON rules).
+2. **Introspect:** `Validator -> Spec` (Turn code back into JSON).
+
+### Round-tripping Example (Rust)
+
+```rust
+use rod_rs::{string, RodSpec, RodValidator};
+
+// 1. Create a validator via Builder API
+let original_validator = string().min(10).email();
+
+// 2. Introspect: Convert Validator back to a Spec
+let spec: RodSpec = original_validator.to_spec();
+
+// 3. Serialize to JSON
+let json_string = serde_json::to_string(&spec).unwrap();
+
+// 4. Reload: Convert JSON back to an executable validator
+let reloaded_spec: RodSpec = serde_json::from_str(&json_string).unwrap();
+let new_validator = reloaded_spec.build();
+```
+
+## Usage across Languages
 
 <Tabs items={['Rust', 'TypeScript', 'Python']}>
   <Tab value="Rust">
-    In Rust, you can use `serde_json` or `serde_yaml` to parse a string directly into a `RodSpec` enum, then call `.build()`.
-
     ```rust
-    use rod::schema::parser::RodSpec;
+    use rod_rs::RodSpec;
     use serde_json::json;
 
-    fn main() {
-        let spec_json = json!({
-            "type": "object",
-            "properties": {
-                "name": { "type": "string", "min": 3 },
-                "age": { "type": "number", "int": true }
-            },
-            "strict": true
-        });
+    let spec_json = json!({
+        "type": "object",
+        "properties": {
+            "name": { "type": "string", "min": 3 },
+            "age": { "type": "number", "int": true }
+        }
+    });
 
-        // 1. Parse JSON into RodSpec
-        let spec: RodSpec = serde_json::from_value(spec_json).unwrap();
-        
-        // 2. Build the validator
-        let validator = spec.build();
-
-        // 3. Use it!
-        let input = rod::io::json::wrap(&json!({ "name": "Rod", "age": 25 }));
-        assert!(validator.validate(&input).is_ok());
-    }
+    let spec: RodSpec = serde_json::from_value(spec_json).unwrap();
+    let validator = spec.build();
     ```
   </Tab>
   <Tab value="TypeScript">
-    Use the `fromJSON` method to create a validator from a plain JavaScript object.
-
     ```typescript
     import { rod } from 'rod-js';
 
@@ -60,19 +66,13 @@ While the builder API (`rod.string().min(5)`) is excellent for compile-time sche
         properties: {
             name: { type: "string", min: 3 },
             age: { type: "number", int: true }
-        },
-        strict: true
+        }
     };
 
-    // Create validator directly from JSON object
     const DynamicUser = rod.fromJSON(spec);
-
-    const result = DynamicUser.parse({ name: "Rod", age: 25 });
     ```
   </Tab>
   <Tab value="Python">
-    In Python, you can pass a dictionary that follows the RodSpec structure to create a schema.
-
     ```python
     import rod
 
@@ -80,63 +80,18 @@ While the builder API (`rod.string().min(5)`) is excellent for compile-time sche
         "type": "object",
         "properties": {
             "name": { "type": "string", "min": 3 },
-            "age": { "type": "number", "int": 1 } # Use 1 for true in some FFI layers
-        },
-        "strict": True
+            "age": { "type": "number", "int": True }
+        }
     }
 
-    # Use the dynamic factory (Assuming rod.from_json is available)
     DynamicUser = rod.from_json(spec)
-
-    result = DynamicUser.parse({ "name": "Rod", "age": 25 })
     ```
   </Tab>
 </Tabs>
 
-## Specification Format
+## Why use RodSpec over JSON Schema?
 
-A `RodSpec` is defined by a `type` field and various constraint fields.
-
-### String Spec
-```json
-{
-  "type": "string",
-  "min": 3,
-  "max": 20,
-  "email": true,
-  "trim": true
-}
-```
-
-### Number Spec
-```json
-{
-  "type": "number",
-  "min": 0,
-  "int": true
-}
-```
-
-### Object Spec
-```json
-{
-  "type": "object",
-  "properties": {
-    "fieldName": { "type": "string" }
-  },
-  "strict": false
-}
-```
-
-### Array Spec
-```json
-{
-  "type": "array",
-  "items": { "type": "string" },
-  "min": 1
-}
-```
-
-<Callout type="info" title="Recursive Specs">
-Currently, the `RodSpec` JSON format is optimized for tree structures. For deeply recursive schemas (where an object references itself), it is recommended to use the `lazy()` builder API in your host language.
-</Callout>
+While Rod supports [exporting to JSON Schema](./json-schema), the `RodSpec` format is preferred for **Internal Rod communication** because:
+1. **Precision:** It captures Rod-specific features like `trim`, `cuid`, and `transform` exactly.
+2. **Speed:** Parsing a `RodSpec` into a Rod validator is significantly faster than parsing a generic JSON Schema.
+3. **Native:** It maps 1-to-1 with the Rust Enum variants used in the core engine.
