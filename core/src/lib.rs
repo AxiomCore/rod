@@ -5,6 +5,13 @@ pub mod macros;
 pub mod schema;
 pub mod types;
 
+pub mod traits;
+pub use traits::RodSchema;
+
+// Re-export the derive macro
+#[cfg(feature = "macros")]
+pub use rod_macros::Rod;
+
 use serde_json::Value;
 
 // Export types factories

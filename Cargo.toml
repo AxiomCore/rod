@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "core",
+    "macros",
     "bindings/rod-wasm",
     "bindings/rod-pyo3",
 ]

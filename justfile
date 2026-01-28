@@ -74,6 +74,10 @@ publish-all: publish-rust publish-js publish-python
 
 # Publish the core Rust library to crates.io (as rod-rs)
 publish-rust:
+    @echo "📦 Publishing rod-macros to crates.io..."
+    cd macros && cargo publish
+    @echo "Waiting for crates.io to index rod-macros..."
+    @sleep 10
     @echo "📦 Publishing rod-rs to crates.io..."
     cd core && cargo publish
 

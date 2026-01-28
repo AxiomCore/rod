@@ -644,6 +644,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 
 [[package]]
+name = "rod-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "rod-pyo3"
 version = "0.1.0"
 dependencies = [
@@ -656,13 +665,14 @@ dependencies = [
 
 [[package]]
 name = "rod-rs"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "criterion",
  "js-sys",
  "lazy_static",
  "regex",
+ "rod-macros",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
