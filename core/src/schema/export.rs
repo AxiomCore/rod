@@ -42,13 +42,9 @@ impl RodSpec {
                 if ip.unwrap_or(false) {
                     schema.insert("format".into(), "idn-address".into());
                 }
-
-                // CUID mapping (as requested: pattern based)
                 if cuid.unwrap_or(false) {
                     schema.insert("pattern".into(), "^[cC][^\\s-]{8,}$".into());
                 }
-
-                // Custom Regex
                 if let Some(pattern) = regex {
                     schema.insert("pattern".into(), pattern.clone().into());
                 }
@@ -84,24 +80,40 @@ impl RodSpec {
                 }
             }
 
+            RodSpec::Set { value, min } => {
+                schema.insert("type".into(), "array".into());
+                schema.insert("uniqueItems".into(), true.into());
+                schema.insert("items".into(), value.to_json_schema());
+                if let Some(n) = min {
+                    schema.insert("minItems".into(), (*n).into());
+                }
+            }
+
+            RodSpec::Map { key, value } => {
+                schema.insert("type".into(), "array".into());
+                schema.insert(
+                    "items".into(),
+                    json!({
+                        "type": "array",
+                        "prefixItems": [key.to_json_schema(), value.to_json_schema()],
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "items": false
+                    }),
+                );
+            }
+
             RodSpec::Object { properties, strict } => {
                 schema.insert("type".into(), "object".into());
-
                 let mut props_map = Map::new();
                 let mut required = Vec::new();
-
                 for (name, spec) in properties {
                     props_map.insert(name.clone(), spec.to_json_schema());
-
-                    // In JSON Schema, required is property of the parent object.
-                    // If a spec is NOT Optional, it is required.
                     if !spec.is_optional() {
                         required.push(name.clone());
                     }
                 }
-
                 required.sort();
-
                 schema.insert("properties".into(), Value::Object(props_map));
                 if !required.is_empty() {
                     schema.insert(
@@ -109,10 +121,15 @@ impl RodSpec {
                         Value::Array(required.into_iter().map(Value::String).collect()),
                     );
                 }
-
                 if strict.unwrap_or(false) {
                     schema.insert("additionalProperties".into(), false.into());
                 }
+            }
+
+            RodSpec::Record { key, value } => {
+                schema.insert("type".into(), "object".into());
+                schema.insert("propertyNames".into(), key.to_json_schema());
+                schema.insert("additionalProperties".into(), value.to_json_schema());
             }
 
             RodSpec::Tuple { items } => {
@@ -124,10 +141,25 @@ impl RodSpec {
                 schema.insert("items".into(), false.into());
             }
 
+            RodSpec::Union { options } => {
+                let any_of: Vec<Value> = options.iter().map(|o| o.to_json_schema()).collect();
+                return json!({ "anyOf": any_of });
+            }
+
+            RodSpec::DiscriminatedUnion {
+                discriminator,
+                options,
+            } => {
+                let one_of: Vec<Value> = options.iter().map(|o| o.to_json_schema()).collect();
+                return json!({
+                    "oneOf": one_of,
+                    "discriminator": { "propertyName": discriminator }
+                });
+            }
+
             RodSpec::Literal { value } => {
                 schema.insert("const".into(), value.clone());
             }
-
             RodSpec::Enum { values } => {
                 schema.insert(
                     "enum".into(),
@@ -135,20 +167,29 @@ impl RodSpec {
                 );
             }
 
-            RodSpec::Date { .. } => {
+            RodSpec::Date { min, max } => {
                 schema.insert("type".into(), "integer".into());
-                schema.insert(
-                    "description".into(),
-                    "Unix timestamp in milliseconds".into(),
-                );
+                schema.insert("description".into(), "Unix timestamp in ms".into());
+                if let Some(n) = min {
+                    schema.insert("minimum".into(), (*n).into());
+                }
+                if let Some(n) = max {
+                    schema.insert("maximum".into(), (*n).into());
+                }
             }
 
             RodSpec::Nullable(inner) => {
                 let mut inner_val = inner.to_json_schema();
                 if let Some(obj) = inner_val.as_object_mut() {
                     if let Some(t) = obj.get("type") {
-                        let mut types = vec![t.clone()];
-                        types.push("null".into());
+                        let mut types = if t.is_array() {
+                            t.as_array().unwrap().clone()
+                        } else {
+                            vec![t.clone()]
+                        };
+                        if !types.contains(&json!("null")) {
+                            types.push("null".into());
+                        }
                         obj.insert("type".into(), Value::Array(types));
                     } else {
                         return json!({ "anyOf": [inner_val, { "type": "null" }] });
@@ -160,18 +201,8 @@ impl RodSpec {
             RodSpec::Optional(inner) => {
                 return inner.to_json_schema();
             }
-
             RodSpec::Any => return json!({}),
             RodSpec::Never => return json!({ "not": {} }),
-
-            // Catch-all for other recursive variants
-            RodSpec::Record { value, .. } => {
-                schema.insert("type".into(), "object".into());
-                schema.insert("additionalProperties".into(), value.to_json_schema());
-            }
-            _ => {
-                schema.insert("type".into(), "any".into());
-            }
         }
 
         Value::Object(schema)
