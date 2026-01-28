@@ -6,6 +6,7 @@ pub mod schema;
 pub mod types;
 
 pub mod traits;
+pub use schema::spec::RodSpec;
 pub use traits::RodSchema;
 
 // Re-export the derive macro

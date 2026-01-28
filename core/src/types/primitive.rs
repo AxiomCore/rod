@@ -1,3 +1,4 @@
+use crate::RodSpec;
 use crate::core::input::RodInput;
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
@@ -14,6 +15,10 @@ impl RodValidator for RodAny {
     ) -> Result<RodValue<'a>, ()> {
         // Zero-Copy Pass-through using Lazy cursor
         Ok(RodValue::Lazy(input.clone_box()))
+    }
+
+    fn to_spec(&self) -> RodSpec {
+        RodSpec::Any
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
@@ -45,6 +50,10 @@ impl RodValidator for RodNever {
             "Expected never".into(),
         );
         Err(())
+    }
+
+    fn to_spec(&self) -> RodSpec {
+        RodSpec::Never
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

@@ -1,0 +1,62 @@
+---
+title: Introspection
+description: Peek inside your validators programmatically.
+---
+
+import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
+
+# Introspection
+
+In most validation libraries, once a validator is compiled, it becomes a "black box"—you can run data through it, but you can't ask it what its rules are. Rod changes this by providing **First-Class Introspection**.
+
+## The `to_spec()` Method
+
+Every Rod validator can describe itself using the `RodSpec` enum. This converts executable logic back into structured data.
+
+```rust
+use rod_rs::{string, RodValidator, RodSpec};
+
+let schema = string().min(5).email();
+
+// Peeking inside
+let spec = schema.to_spec();
+
+match spec {
+    RodSpec::String { min, email, .. } => {
+        println!("Min length is: {:?}", min);     // Some(5)
+        println!("Is email required? {:?}", email); // Some(true)
+    },
+    _ => unreachable!()
+}
+```
+
+## Why Introspection?
+
+### 1. Dynamic UI Generation
+If you are building a "Form Builder," you can look at the `RodSpec` to decide which UI component to render.
+- `RodSpec::Boolean` → Render a Toggle/Checkbox.
+- `RodSpec::String` with `email: true` → Render an `<input type="email">`.
+- `RodSpec::Number` with `min/max` → Render a Range Slider.
+
+### 2. Automated Test Data (Fuzzing)
+You can write a simple utility that reads a `RodSpec` and generates valid (or invalid) data automatically for your integration tests.
+
+### 3. Custom Exporters
+While Rod provides a built-in JSON Schema exporter, you can use `to_spec()` to build your own exporters for other formats like:
+- SQL `CHECK` constraints.
+- Protobuf definitions.
+- GraphQL types.
+
+## Feature Parity
+
+The `RodSpec` returned by `to_spec()` is the **exact same format** used by the [Dynamic Schema](./dynamic-schemas) system. This means you can serialize a builder-created schema to JSON, save it to a database, and reload it later as an executable validator.
+
+```rust
+// Builder -> Spec -> JSON
+let original = string().min(10);
+let json_spec = serde_json::to_string(&original.to_spec()).unwrap();
+
+// JSON -> Spec -> Validator
+let reloaded_spec: RodSpec = serde_json::from_str(&json_spec).unwrap();
+let validator = reloaded_spec.build();
+```

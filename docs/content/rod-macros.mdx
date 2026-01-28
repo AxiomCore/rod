@@ -1,123 +1,82 @@
 ---
 title: Macros (#[derive(Rod)])
-description: Schema-Driven Development for Rust.
+description: Schema-Driven Development with automatic documentation.
 ---
 
 import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 
 # Procedural Macros
 
-Rod allows you to automatically generate validation schemas directly from your Rust structs using the `#[derive(Rod)]` macro. This enables a **Schema-Driven Development** workflow similar to `serde`.
+The `#[derive(Rod)]` macro allows you to turn Rust structs into validation engines and self-documenting JSON Schemas simultaneously.
 
-<Callout type="info">
-This feature requires the `macros` feature flag, which is enabled by default.
-</Callout>
+## Automatic Method Generation
 
-## Basic Usage
+When you derive `Rod` on a struct, the macro generates several useful methods:
 
-Simply derive `Rod` on your struct and use the `#[rod(...)]` attribute to define validation rules.
+1. **`::schema()`**: Returns an executable `Box<dyn RodValidator>`.
+2. **`::spec()`**: Returns the internal `RodSpec` metadata.
+3. **`::json_schema()`**: Returns a standard **JSON Schema Draft 2020-12** object.
 
 ```rust
-use rod_rs::{Rod, RodSchema};
-
-#[derive(Rod, Debug)]
+#[derive(Rod)]
 struct User {
-    #[rod(min = 3, max = 20)]
-    username: String,
-
-    #[rod(email)]
-    email: String,
-
-    #[rod(min = 18)]
-    age: u8,
-
-    is_active: bool,
+    #[rod(min = 3)]
+    name: String,
+    age: u32,
 }
 
-fn main() {
-    // Generate the schema automatically
-    let schema = User::schema();
+// 1. For Validation
+let validator = User::schema();
 
-    // Validate JSON data
-    let data = serde_json::json!({
-        "username": "Rod",
-        "email": "hello@rod.rs",
-        "age": 25,
-        "is_active": true
-    });
-
-    let result = schema.validate(&rod_rs::io::json::wrap(&data));
-    assert!(result.is_ok());
-}
+// 2. For External Tools (Postgres, Swagger)
+let json = User::json_schema();
 ```
 
-## Supported Attributes
+## Generic Bound Injection
 
-These attributes map directly to Rod's builder API.
-
-| Attribute | Type | Description |
-| :--- | :--- | :--- |
-| `#[rod(min = N)]` | Number/String | Minimum value or length. |
-| `#[rod(max = N)]` | Number/String | Maximum value or length. |
-| `#[rod(email)]` | String | Validates email format. |
-| `#[rod(url)]` | String | Validates URL format. |
-| `#[rod(uuid)]` | String | Validates UUID v4. |
-| `#[rod(cuid)]` | String | Validates CUID format. |
-| `#[rod(regex = "...")]` | String | Validates against a Regex pattern. |
-
-## Supported Types & Heuristics
-
-The macro uses **heuristic path matching** to identify types. This means it looks at the type name (e.g., "Vec", "Option") rather than resolving the full type system.
-
-### 1. Primitives
-| Rust Type | Rod Schema |
-| :--- | :--- |
-| `String`, `&str`, `Cow<str>` | `rod::string()` |
-| `bool` | `rod::boolean()` |
-| `f32`, `f64` | `rod::number()` |
-| `i32`, `u32`, `usize`, etc. | `rod::number().int()` |
-| `char` | `rod::string()` |
-
-### 2. Containers
-| Rust Type | Rod Schema | Notes |
-| :--- | :--- | :--- |
-| `Option<T>` | `T.nullable().optional()` | Handles both `null` and missing keys. |
-| `Vec<T>` | `rod::array(T)` | Also supports `VecDeque`, `LinkedList`. |
-| `HashSet<T>` | `rod::set(T)` | Also supports `BTreeSet`. |
-| `HashMap<K, V>` | `rod::record(K, V)` | Also supports `BTreeMap`. |
-| `[T; N]` | `rod::array(T)` | Ignores fixed length `N` currently. |
-
-### 3. Smart Pointers & References
-The macro automatically "peels" these wrappers to validate the inner value:
-- `Box<T>`
-- `Rc<T>`, `Arc<T>`
-- `Cell<T>`, `RefCell<T>`
-- `Mutex<T>`, `RwLock<T>`
-- `&T` (References)
-
-### 4. Date & Time
-Requires the `chrono` crate types.
-- `chrono::DateTime<Utc>`
-- `chrono::NaiveDate`
-- `std::time::SystemTime`
-- **Result:** `rod::date()` (Expects Unix timestamp integer/float).
-
-### 5. Nested Structs & Generics
-You can nest structs seamlessly. The inner struct must also implement `RodSchema`.
+The macro is "Generic-Aware." If you define a generic struct, the macro automatically injects the `T: RodSchema` bound so you don't have to write it manually.
 
 ```rust
 #[derive(Rod)]
-struct Address {
-    city: String
-}
-
-#[derive(Rod)]
-struct User<T> {
-    profile: T,        // Generic T must implement RodSchema
-    address: Address,  // Nested Struct
+struct Envelope<T> {
+    id: String,
+    data: T, // Macro adds 'where T: RodSchema'
 }
 ```
 
-<Callout type="warn" title="Heuristic Limitations">
-Because the macro matches on type names (e.g., `Vec`), it may fail if you alias standard types (e.g., `type MyList = Vec<String>`). Use standard type names for best compatibility.
+## Tuple Structs
+
+Positional tuple structs are fully supported and export to JSON Schema using the `prefixItems` keyword.
+
+```rust
+#[derive(Rod)]
+struct Coords(f64, f64);
+
+// Produces: { "type": "array", "prefixItems": [{ "type": "number" }, { "type": "number" }] }
+let json = Coords::json_schema();
+```
+
+## Support Matrix
+
+| Rust Category | Mapping Logic | JSON Schema Support |
+| :--- | :--- | :--- |
+| **Primitives** | `String`, `i32`, `bool`, `f64`, etc. | Full |
+| **Optional** | `Option<T>` maps to `nullable().optional()`. | Excluded from `required` |
+| **Collections** | `Vec<T>`, `HashSet<T>`, `HashMap<K, V>`. | Full |
+| **Pointers** | `Box<T>`, `Arc<T>`, `Rc<T>`, `Cow<T>`. | Full (Unwrapped) |
+| **References** | `&str`, `&T`. | Full (Unwrapped) |
+
+## Advanced Attributes
+
+| Attribute | Logic |
+| :--- | :--- |
+| `#[rod(min = 5)]` | Minimum value for numbers, minimum length for strings. |
+| `#[rod(max = 10)]` | Maximum value for numbers, maximum length for strings. |
+| `#[rod(email)]` | Validates email format. |
+| `#[rod(uuid)]` | Validates UUID v4. |
+| `#[rod(cuid)]` | Validates CUID and exports as regex pattern. |
+| `#[rod(regex = "...")]` | Custom regular expression validation. |
+
+<Callout type="warn">
+**Attribute Errors:** The Rod macro will fail to compile if you provide invalid attributes (e.g., `#[rod(min = "not-a-number")]`), providing a clear error message pointing to the exact field.
 </Callout>

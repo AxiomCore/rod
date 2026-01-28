@@ -1,3 +1,4 @@
+use crate::RodSpec;
 use crate::core::input::{RodInput, RodThreadBounds};
 use crate::core::value::RodValue;
 use crate::error::{RodResult, ValidationContext};
@@ -9,6 +10,21 @@ pub trait RodValidator: std::fmt::Debug + RodThreadBounds {
         ctx: &mut ValidationContext,
         input: &dyn RodInput<'a>,
     ) -> Result<RodValue<'a>, ()>;
+
+    fn to_spec(&self) -> RodSpec {
+        RodSpec::Any
+    }
+
+    fn json_schema(&self) -> serde_json::Value {
+        let mut s = self.to_spec().to_json_schema();
+        if let Some(obj) = s.as_object_mut() {
+            obj.insert(
+                "$schema".into(),
+                "https://json-schema.org/draft/2020-12/schema".into(),
+            );
+        }
+        s
+    }
 
     fn validate<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<RodValue<'a>> {
         let mut ctx = ValidationContext::new();
@@ -42,6 +58,10 @@ impl RodValidator for Box<dyn RodValidator> {
         input: &dyn RodInput<'a>,
     ) -> Result<RodValue<'a>, ()> {
         (**self).validate_with_context(ctx, input)
+    }
+
+    fn to_spec(&self) -> RodSpec {
+        (**self).to_spec()
     }
 
     fn is_optional(&self) -> bool {

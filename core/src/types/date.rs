@@ -1,3 +1,4 @@
+use crate::RodSpec;
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
@@ -97,6 +98,13 @@ impl RodValidator for RodDate {
         }
 
         Ok(val_to_return)
+    }
+
+    fn to_spec(&self) -> RodSpec {
+        RodSpec::Date {
+            min: self.min,
+            max: self.max,
+        }
     }
 
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {

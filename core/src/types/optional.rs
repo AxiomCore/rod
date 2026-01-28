@@ -1,3 +1,4 @@
+use crate::RodSpec;
 use crate::core::input::{DataType, RodInput};
 use crate::core::validator::RodValidator;
 use crate::core::value::RodValue;
@@ -25,6 +26,10 @@ impl RodValidator for RodOptional {
         }
 
         self.inner.validate_with_context(ctx, input)
+    }
+
+    fn to_spec(&self) -> RodSpec {
+        RodSpec::Optional(Box::new(self.inner.to_spec()))
     }
 
     fn is_optional(&self) -> bool {
