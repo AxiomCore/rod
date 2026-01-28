@@ -28,7 +28,7 @@ wasm-bindgen = "0.2"
 serde-wasm-bindgen = "0.6"
 js-sys = "0.3"
 smallvec = "1.13"
-rod-macros = { path = "../macros", optional = true }
+rod-macros = { path = "../macros", version = "0.1.0", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
