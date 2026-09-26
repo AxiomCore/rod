@@ -44,3 +44,5 @@ ENV/
 /docs/node_modules/
 /docs/out/
 /docs/.turbo/
+**/.DS_Store
+**/.summary_files/
