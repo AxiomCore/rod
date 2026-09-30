@@ -6,6 +6,22 @@ impl RodSpec {
         let mut schema = Map::new();
 
         match self {
+            RodSpec::Recursive { root, definitions } => {
+                let mut value = root.to_json_schema();
+                value.as_object_mut().unwrap().insert(
+                    "$defs".into(),
+                    Value::Object(
+                        definitions
+                            .iter()
+                            .map(|(name, spec)| (name.clone(), spec.to_json_schema()))
+                            .collect(),
+                    ),
+                );
+                return value;
+            }
+            RodSpec::Ref { name, .. } => {
+                return json!({"$ref": format!("#/$defs/{}", name.replace('~', "~0").replace('/', "~1"))});
+            }
             RodSpec::String {
                 min,
                 max,

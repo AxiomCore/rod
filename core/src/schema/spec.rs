@@ -1,7 +1,8 @@
 use crate::core::validator::RodValidator;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 use crate::types::array::array;
 use crate::types::boolean::boolean;
@@ -87,8 +88,42 @@ pub enum RodSpec {
         min: Option<i64>,
         max: Option<i64>,
     },
-    Optional(Box<RodSpec>),
-    Nullable(Box<RodSpec>),
+    Optional(#[serde(with = "inner_spec")] Box<RodSpec>),
+    Nullable(#[serde(with = "inner_spec")] Box<RodSpec>),
+    /// Finite, self-contained schema graph for recursive model constraints.
+    Recursive {
+        root: Box<RodSpec>,
+        definitions: BTreeMap<String, RodSpec>,
+    },
+    Ref {
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        strict: Option<bool>,
+    },
+}
+
+// Internally tagged newtype variants otherwise flatten the child's `type`
+// over the wrapper's tag. Preserve the public Rust enum API while encoding
+// the documented {type: "optional"|"nullable", inner: {...}} schema.
+mod inner_spec {
+    use super::RodSpec;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    pub fn serialize<S: Serializer>(inner: &RodSpec, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Wrapper<'a> {
+            inner: &'a RodSpec,
+        }
+        Wrapper { inner }.serialize(serializer)
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Box<RodSpec>, D::Error> {
+        #[derive(Deserialize)]
+        struct Wrapper {
+            inner: Box<RodSpec>,
+        }
+        Ok(Wrapper::deserialize(deserializer)?.inner)
+    }
 }
 
 impl RodSpec {
@@ -107,7 +142,29 @@ impl RodSpec {
     }
 
     pub fn build(&self) -> Box<dyn RodValidator> {
+        self.build_scoped(Arc::new(BTreeMap::new()), 64)
+    }
+
+    fn build_scoped(
+        &self,
+        definitions: Arc<BTreeMap<String, RodSpec>>,
+        depth: usize,
+    ) -> Box<dyn RodValidator> {
         match self {
+            RodSpec::Recursive { root, definitions } => {
+                root.build_scoped(Arc::new(definitions.clone()), depth)
+            }
+            RodSpec::Ref { name, strict } => {
+                let Some(mut target) = definitions.get(name).cloned().filter(|_| depth > 0) else {
+                    return Box::new(never());
+                };
+                if let (Some(value), RodSpec::Object { strict, .. }) = (strict, &mut target) {
+                    *strict = Some(*value);
+                }
+                Box::new(crate::types::lazy::lazy(move || {
+                    target.build_scoped(definitions.clone(), depth - 1)
+                }))
+            }
             RodSpec::Date { min, max } => {
                 let mut d = date();
                 if let Some(v) = min {
@@ -196,7 +253,7 @@ impl RodSpec {
             RodSpec::Any => Box::new(any()),
             RodSpec::Never => Box::new(never()),
             RodSpec::Array { items, min, max } => {
-                let mut a = array(items.build());
+                let mut a = array(items.build_scoped(definitions.clone(), depth));
                 if let Some(v) = min {
                     a = a.min(*v);
                 }
@@ -208,7 +265,7 @@ impl RodSpec {
             RodSpec::Object { properties, strict } => {
                 let mut map = HashMap::new();
                 for (k, v) in properties {
-                    map.insert(k.clone(), v.build());
+                    map.insert(k.clone(), v.build_scoped(definitions.clone(), depth));
                 }
                 let mut obj = object(map);
                 if strict.unwrap_or(false) {
@@ -218,23 +275,37 @@ impl RodSpec {
                 }
                 Box::new(obj)
             }
-            RodSpec::Union { options } => {
-                Box::new(union(options.iter().map(|o| o.build()).collect()))
-            }
+            RodSpec::Union { options } => Box::new(union(
+                options
+                    .iter()
+                    .map(|o| o.build_scoped(definitions.clone(), depth))
+                    .collect(),
+            )),
             RodSpec::Literal { value } => Box::new(literal(value.clone())),
             RodSpec::Enum { values } => {
                 Box::new(crate::types::enum_type::RodEnum::new(values.clone()))
             }
-            RodSpec::Tuple { items } => Box::new(tuple(items.iter().map(|i| i.build()).collect())),
-            RodSpec::Record { key, value } => Box::new(record(key.build(), value.build())),
+            RodSpec::Tuple { items } => Box::new(tuple(
+                items
+                    .iter()
+                    .map(|i| i.build_scoped(definitions.clone(), depth))
+                    .collect(),
+            )),
+            RodSpec::Record { key, value } => Box::new(record(
+                key.build_scoped(definitions.clone(), depth),
+                value.build_scoped(definitions.clone(), depth),
+            )),
             RodSpec::Set { value, min } => {
-                let mut s = set(value.build());
+                let mut s = set(value.build_scoped(definitions.clone(), depth));
                 if let Some(v) = min {
                     s = s.min(*v);
                 }
                 Box::new(s)
             }
-            RodSpec::Map { key, value } => Box::new(map(key.build(), value.build())),
+            RodSpec::Map { key, value } => Box::new(map(
+                key.build_scoped(definitions.clone(), depth),
+                value.build_scoped(definitions.clone(), depth),
+            )),
             RodSpec::DiscriminatedUnion {
                 discriminator,
                 options,
@@ -242,18 +313,18 @@ impl RodSpec {
                 let mut map = HashMap::new();
                 for opt in options {
                     if let Some(val) = opt.find_discriminator_value(discriminator) {
-                        map.insert(val, opt.build());
+                        map.insert(val, opt.build_scoped(definitions.clone(), depth));
                     }
                 }
                 Box::new(discriminated_union_map(discriminator.clone(), map))
             }
             RodSpec::Optional(inner) => {
                 use crate::types::optional::OptionalExtension;
-                Box::new(inner.build().optional())
+                Box::new(inner.build_scoped(definitions.clone(), depth).optional())
             }
             RodSpec::Nullable(inner) => {
                 use crate::types::nullable::NullableExtension;
-                Box::new(inner.build().nullable())
+                Box::new(inner.build_scoped(definitions.clone(), depth).nullable())
             }
         }
     }
