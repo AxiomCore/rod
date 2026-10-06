@@ -38,6 +38,7 @@ pub trait RodInput<'a>: std::fmt::Debug + RodThreadBounds {
         self.as_str().map(|s| s.len())
     }
 
+    #[cfg(feature = "javascript")]
     fn get_js_value(&self) -> Option<wasm_bindgen::JsValue> {
         None
     }

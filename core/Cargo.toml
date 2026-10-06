@@ -14,7 +14,8 @@ categories = ["data-structures", "wasm", "parsing"]
 [features]
 non-thread-safe = []
 macros = ["dep:rod-macros"]
-default = ["macros"]
+default = ["macros", "javascript"]
+javascript = ["dep:wasm-bindgen", "dep:serde-wasm-bindgen", "dep:js-sys"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -23,10 +24,10 @@ serde_yaml = "0.9"
 thiserror = "1.0"
 regex = "1.10"
 lazy_static = "1.4"
-chrono = { version = "0.4", features = ["serde"] }
-wasm-bindgen = "0.2"
-serde-wasm-bindgen = "0.6"
-js-sys = "0.3"
+chrono = { version = "0.4", default-features = false, features = ["std", "serde"] }
+wasm-bindgen = {version="0.2", optional=true}
+serde-wasm-bindgen = {version="0.6", optional=true}
+js-sys = {version="0.3", optional=true}
 smallvec = "1.13"
 rod-macros = { path = "../macros", version = "0.1.1", optional = true }
 

@@ -177,6 +177,7 @@ impl<'a> RodInput<'a> for RodValueInput<'a> {
         }
     }
 
+    #[cfg(feature = "javascript")]
     fn get_js_value(&self) -> Option<wasm_bindgen::JsValue> {
         match self.0 {
             RodValue::Lazy(i) => i.get_js_value(),
