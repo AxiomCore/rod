@@ -1,0 +1,32 @@
+properties:
+  children:
+    definitions:
+      Node:
+        properties:
+          children:
+            items:
+              name: Node
+              type: ref
+            type: array
+          name:
+            min: 2
+            type: string
+        type: object
+    root:
+      items:
+        properties:
+          children:
+            items:
+              name: Node
+              type: ref
+            type: array
+          name:
+            min: 2
+            type: string
+        type: object
+      type: array
+    type: recursive
+  name:
+    min: 2
+    type: string
+type: object

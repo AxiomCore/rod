@@ -27,6 +27,17 @@ impl RodValidator for RodNullable {
         self.inner.validate_with_context(ctx, input)
     }
 
+    fn check_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> bool {
+        if input.get_type() == DataType::Null {
+            return true;
+        }
+        self.inner.check_with_context(ctx, input)
+    }
+
     fn to_spec(&self) -> RodSpec {
         RodSpec::Nullable(Box::new(self.inner.to_spec()))
     }
