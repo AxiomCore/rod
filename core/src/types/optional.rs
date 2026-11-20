@@ -28,6 +28,17 @@ impl RodValidator for RodOptional {
         self.inner.validate_with_context(ctx, input)
     }
 
+    fn check_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> bool {
+        if input.get_type() == DataType::Undefined {
+            return true;
+        }
+        self.inner.check_with_context(ctx, input)
+    }
+
     fn to_spec(&self) -> RodSpec {
         RodSpec::Optional(Box::new(self.inner.to_spec()))
     }

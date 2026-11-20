@@ -44,6 +44,15 @@ impl RodValidator for RodLazy {
         validator.validate_with_context(ctx, input)
     }
 
+    fn check_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> bool {
+        let validator = (self.builder)();
+        validator.check_with_context(ctx, input)
+    }
+
     fn deep_partial_boxed(&self) -> Box<dyn RodValidator> {
         use crate::types::optional::OptionalExtension;
         let builder = self.builder.clone();

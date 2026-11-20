@@ -101,6 +101,61 @@ impl RodValidator for RodArray {
         Err(())
     }
 
+    fn check_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> bool {
+        if input.get_type() != DataType::Array {
+            ctx.add_issue(
+                RodIssueCode::InvalidType {
+                    expected: "array".into(),
+                    received: "unknown".into(),
+                },
+                "Expected array".into(),
+            );
+            return false;
+        }
+        let len = input.count().unwrap_or(0);
+        if let Some(min) = self.min {
+            if len < min {
+                ctx.add_issue(
+                    RodIssueCode::TooSmall {
+                        minimum: min as f64,
+                        inclusive: true,
+                        type_: "array".into(),
+                    },
+                    format!("Array must contain at least {} element(s)", min),
+                );
+            }
+        }
+        if let Some(max) = self.max {
+            if len > max {
+                ctx.add_issue(
+                    RodIssueCode::TooBig {
+                        maximum: max as f64,
+                        inclusive: true,
+                        type_: "array".into(),
+                    },
+                    format!("Array must contain at most {} element(s)", max),
+                );
+            }
+        }
+        for i in 0..len {
+            let mut ok = false;
+            let found = ctx.with_index(i, |sub_ctx| {
+                input.with_index(i, &mut |item_input| {
+                    ok = self.schema.check_with_context(sub_ctx, item_input);
+                    Ok(crate::core::value::RodValue::Null)
+                })
+            });
+            if !(found.is_some() && ok) && ctx.should_abort() {
+                return false;
+            }
+        }
+        !ctx.has_issues()
+    }
+
     fn to_spec(&self) -> RodSpec {
         RodSpec::Array {
             items: Box::new(self.schema.to_spec()),

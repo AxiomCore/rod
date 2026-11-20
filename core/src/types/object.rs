@@ -162,6 +162,73 @@ impl RodValidator for RodObject {
         Err(())
     }
 
+    fn check_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> bool {
+        if input.get_type() != DataType::Object {
+            ctx.add_issue(
+                RodIssueCode::InvalidType {
+                    expected: "object".into(),
+                    received: "unknown".into(),
+                },
+                "Expected object".into(),
+            );
+            return false;
+        }
+        // Same iteration order (this map) and issue paths as the validating
+        // walk, but the key is borrowed for the path instead of cloned and
+        // no output entries are built.
+        for (key, validator) in &self.shape {
+            let mut ok = false;
+            let found = ctx.with_borrowed_key(key, |sub_ctx| {
+                input.with_key(key, &mut |child_input| {
+                    ok = validator.check_with_context(sub_ctx, child_input);
+                    Ok(RodValue::Null)
+                })
+            });
+            match found {
+                Some(_) if ok => {}
+                Some(_) => {
+                    if ctx.should_abort() {
+                        return false;
+                    }
+                }
+                None => {
+                    if !validator.is_optional() {
+                        ctx.with_borrowed_key(key, |sub_ctx| {
+                            sub_ctx.add_issue(
+                                RodIssueCode::InvalidType {
+                                    expected: "any".into(),
+                                    received: "undefined".into(),
+                                },
+                                "Required".into(),
+                            );
+                        });
+                    }
+                }
+            }
+        }
+        if self.unknown_keys == UnknownKeys::Strict {
+            if let Some(keys_iter) = input.keys() {
+                for key in keys_iter {
+                    if !self.shape.contains_key(key.as_ref()) {
+                        ctx.with_owned_path(key.to_string(), |sub_ctx| {
+                            sub_ctx.add_issue(
+                                RodIssueCode::UnrecognizedKeys {
+                                    keys: vec![key.to_string()],
+                                },
+                                format!("Unrecognized key: '{}'", key),
+                            );
+                        });
+                    }
+                }
+            }
+        }
+        !ctx.has_issues()
+    }
+
     fn to_spec(&self) -> RodSpec {
         let mut properties = std::collections::HashMap::new();
         for (name, validator) in &self.shape {
