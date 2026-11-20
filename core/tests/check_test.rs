@@ -141,8 +141,16 @@ fn recursive_specs_agree() {
         json!({"name": "a", "children": [{"name": "", "children": [{"name": 1}]}]}),
         json!({"children": "x"}),
     ] {
-        let a = v.validate(&wrap(&value)).map(|_| ()).map_err(|e| e.issues);
-        let b = v.check(&wrap(&value)).map_err(|e| e.issues);
+        // `lazy` (refs) rebuilds its object with a fresh HashMap per call, so
+        // issue ORDER varies between any two calls (validate vs validate too);
+        // compare the issue sets.
+        let key = |e: rod_rs::error::RodError| {
+            let mut v: Vec<String> = e.issues.iter().map(|i| format!("{:?}", i)).collect();
+            v.sort();
+            v
+        };
+        let a = v.validate(&wrap(&value)).map(|_| ()).map_err(key);
+        let b = v.check(&wrap(&value)).map_err(key);
         assert_eq!(a, b);
     }
 }
