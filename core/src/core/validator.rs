@@ -11,6 +11,29 @@ pub trait RodValidator: std::fmt::Debug + RodThreadBounds {
         input: &dyn RodInput<'a>,
     ) -> Result<RodValue<'a>, ()>;
 
+    /// Check-only validation: the same accept/reject decision and the same
+    /// issues (codes, paths, messages, order) as `validate_with_context`,
+    /// without building an output value. Containers override it so a large
+    /// list is checked without allocating a value tree or cloning keys.
+    /// Returns `true` when `validate_with_context` would return `Ok`.
+    fn check_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> bool {
+        self.validate_with_context(ctx, input).is_ok()
+    }
+
+    /// Check-only counterpart of `validate`.
+    fn check<'a>(&self, input: &dyn RodInput<'a>) -> RodResult<()> {
+        let mut ctx = ValidationContext::new();
+        let ok = self.check_with_context(&mut ctx, input);
+        if ctx.has_issues() || !ok {
+            return Err(crate::error::RodError { issues: ctx.issues });
+        }
+        Ok(())
+    }
+
     fn to_spec(&self) -> RodSpec {
         RodSpec::Any
     }
@@ -58,6 +81,14 @@ impl RodValidator for Box<dyn RodValidator> {
         input: &dyn RodInput<'a>,
     ) -> Result<RodValue<'a>, ()> {
         (**self).validate_with_context(ctx, input)
+    }
+
+    fn check_with_context<'a>(
+        &self,
+        ctx: &mut ValidationContext,
+        input: &dyn RodInput<'a>,
+    ) -> bool {
+        (**self).check_with_context(ctx, input)
     }
 
     fn to_spec(&self) -> RodSpec {

@@ -211,6 +211,24 @@ impl<'a> ValidationContext<'a> {
         result
     }
 
+    /// Like `with_owned_path`, without cloning `segment`: the segment is
+    /// popped before this call returns, so it never outlives the borrow.
+    pub fn with_borrowed_key<F, R>(&mut self, segment: &str, f: F) -> R
+    where
+        F: FnOnce(&mut Self) -> R,
+    {
+        // SAFETY: the extended reference is stored only in `self.path` and
+        // removed by the `pop` below before `segment`'s borrow ends. A
+        // `fork()` taken inside `f` clones the path into a context that `f`
+        // owns and drops before returning (forks never escape a validator).
+        // Issues flatten the path into owned strings.
+        let segment: &'a str = unsafe { std::mem::transmute::<&str, &'a str>(segment) };
+        self.path.push(PathSegment::Key(Cow::Borrowed(segment)));
+        let result = self.enter_scope(f);
+        self.path.pop();
+        result
+    }
+
     pub fn add_issue(&mut self, code: RodIssueCode, message: String) {
         // Flatten path only on error
         let flattened_path = self.path.iter().map(|p| p.to_string()).collect();
